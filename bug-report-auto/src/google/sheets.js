@@ -14,12 +14,14 @@ const BUG_HEADERS = [
   "Создан",
   "Обновлен",
   "Статус",
+  "Модератор",
   "Айди клиники",
   "Приоритет",
   "Раздел",
   "Описание",
   "Комментарий к файлу",
   "Репортер",
+  "Исправлен",
   "Jira Key",
   "Jira URL",
   "Дубликат",
@@ -100,12 +102,14 @@ function asSheetRow(bug) {
     formatDisplayDate(bug.createdAt),
     formatDisplayDate(bug.updatedAt),
     formatStatus(bug.status),
+    bug.assignedModeratorName || bug.assignedModeratorId || "",
     bug.clinicId || "",
     formatPriority(bug.priority),
     bug.section || "",
     bug.description || "",
     bug.attachmentNote || "",
     bug.reporterName || bug.reporterId || "",
+    bug.fixedAt ? formatDisplayDate(bug.fixedAt) : "",
     bug.jiraKey || "",
     bug.jiraUrl || "",
     bug.duplicateOf || "",
@@ -125,16 +129,18 @@ function rowsToBugEntries(rows) {
       createdAt: row[1] || "",
       updatedAt: row[2] || "",
       status: row[3] || "",
-      clinicId: row[4] || "",
-      priority: row[5] || "",
-      section: row[6] || "",
-      description: row[7] || "",
-      attachmentNote: row[8] || "",
-      reporter: row[9] || "",
-      jiraKey: row[10] || "",
-      jiraUrl: row[11] || "",
-      duplicateOf: row[12] || "",
-      rejectionReason: row[13] || "",
+      moderator: row[4] || "",
+      clinicId: row[5] || "",
+      priority: row[6] || "",
+      section: row[7] || "",
+      description: row[8] || "",
+      attachmentNote: row[9] || "",
+      reporter: row[10] || "",
+      fixedAt: row[11] || "",
+      jiraKey: row[12] || "",
+      jiraUrl: row[13] || "",
+      duplicateOf: row[14] || "",
+      rejectionReason: row[15] || "",
     }));
 }
 
@@ -292,7 +298,7 @@ class GoogleSheetsService {
   async ensureBugHeaders() {
     await this.sheetsApi.spreadsheets.values.update({
       spreadsheetId: this.spreadsheetId,
-      range: `${SHEETS.bugs}!A1:N1`,
+      range: `${SHEETS.bugs}!A1:P1`,
       valueInputOption: "RAW",
       requestBody: { values: [BUG_HEADERS] },
     });
@@ -446,7 +452,7 @@ class GoogleSheetsService {
   async getBugRows() {
     const response = await this.sheetsApi.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
-      range: `${SHEETS.bugs}!A2:N`,
+      range: `${SHEETS.bugs}!A2:P`,
     });
 
     return rowsToBugEntries(response.data.values || []);
@@ -515,14 +521,14 @@ class GoogleSheetsService {
     if (existingRow) {
       await this.sheetsApi.spreadsheets.values.update({
         spreadsheetId: this.spreadsheetId,
-        range: `${SHEETS.bugs}!A${existingRow}:N${existingRow}`,
+        range: `${SHEETS.bugs}!A${existingRow}:P${existingRow}`,
         valueInputOption: "RAW",
         requestBody: { values: [row] },
       });
     } else {
       await this.sheetsApi.spreadsheets.values.append({
         spreadsheetId: this.spreadsheetId,
-        range: `${SHEETS.bugs}!A:N`,
+        range: `${SHEETS.bugs}!A:P`,
         valueInputOption: "RAW",
         insertDataOption: "INSERT_ROWS",
         requestBody: { values: [row] },

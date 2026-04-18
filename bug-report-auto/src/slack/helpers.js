@@ -27,3 +27,7 @@ export function decodeActionValue(value) {
     return {};
   }
 }
+
+export function extractSelectedOptionValue(action) {
+  return action?.selected_option?.value || "";
+}

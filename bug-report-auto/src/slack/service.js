@@ -6,7 +6,12 @@ import { launcherStore } from "../store/launcher-store.js";
 import { buildBugBlocks, buildLauncherBlocks } from "./blocks.js";
 import { slackClient } from "./client.js";
 import { ACTIONS, CALLBACKS } from "./constants.js";
-import { decodeActionValue, extractPlainTextValue, extractStaticValue } from "./helpers.js";
+import {
+  decodeActionValue,
+  extractPlainTextValue,
+  extractSelectedOptionValue,
+  extractStaticValue,
+} from "./helpers.js";
 import {
   buildBugReportModal,
   buildDuplicateModal,
@@ -165,6 +170,10 @@ async function updateBugStatusFromAction(bugId, patch, threadMessage) {
   }
 }
 
+function mentionReporter(bug, message) {
+  return `<@${bug.reporterId}> ${message}`;
+}
+
 export const slackService = {
   runtimeConfig: {
     channelId: config.slackBugChannelId,
@@ -276,7 +285,7 @@ export const slackService = {
       await updateBugStatusFromAction(
         bug.bugId,
         { status: "rejected", rejectionReason: reason },
-        `Баг *#${bug.bugId}* отклонен. Причина: ${reason}`
+        mentionReporter(bug, `баг *#${bug.bugId}* отклонен. Причина: ${reason}`)
       );
       return { response_action: "clear" };
     }
@@ -301,7 +310,7 @@ export const slackService = {
       await updateBugStatusFromAction(
         bug.bugId,
         { status: "duplicate", duplicateOf: masterBugId },
-        `Баг *#${bug.bugId}* помечен как дубликат *#${masterBugId}*.`
+        mentionReporter(bug, `баг *#${bug.bugId}* помечен как дубликат *#${masterBugId}*.`)
       );
       return { response_action: "clear" };
     }
@@ -328,7 +337,11 @@ export const slackService = {
       return {};
     }
 
-    const { bugId } = decodeActionValue(action?.value);
+    const actionValue =
+      action.action_id === ACTIONS.MODERATOR_MORE
+        ? decodeActionValue(extractSelectedOptionValue(action))
+        : decodeActionValue(action?.value);
+    const { bugId } = actionValue;
     const bug = bugStore.get(bugId);
 
     if (!bug) {
@@ -344,13 +357,54 @@ export const slackService = {
     if (action.action_id === ACTIONS.TAKE_IN_WORK) {
       await updateBugStatusFromAction(
         bug.bugId,
-        { status: "triage" },
-        `Баг *#${bug.bugId}* взят в работу модератором <@${payload.user.id}>.`
+        {
+          status: "triage",
+          assignedModeratorId: payload.user.id,
+          assignedModeratorName: payload.user.username || payload.user.name || payload.user.id,
+        },
+        mentionReporter(
+          bug,
+          `баг *#${bug.bugId}* взят в работу модератором <@${payload.user.id}>.`
+        )
       );
       return {
         response_type: "ephemeral",
         text: `Статус #${bug.bugId} обновлен на "В работе".`,
       };
+    }
+
+    if (action.action_id === ACTIONS.MARK_FIXED) {
+      await updateBugStatusFromAction(
+        bug.bugId,
+        {
+          status: "fixed",
+          fixedAt: new Date().toISOString(),
+        },
+        mentionReporter(bug, `баг *#${bug.bugId}* исправлен.`)
+      );
+      return {
+        response_type: "ephemeral",
+        text: `Статус #${bug.bugId} обновлен на "Исправлено".`,
+      };
+    }
+
+    if (action.action_id === ACTIONS.MODERATOR_MORE) {
+      const selectedAction = actionValue.action;
+
+      if (selectedAction === ACTIONS.OPEN_REJECT_MODAL) {
+        await openModal(payload.trigger_id, buildRejectModal(bug.bugId));
+        return {};
+      }
+
+      if (selectedAction === ACTIONS.OPEN_DUPLICATE_MODAL) {
+        await openModal(payload.trigger_id, buildDuplicateModal(bug.bugId));
+        return {};
+      }
+
+      if (selectedAction === ACTIONS.OPEN_LINK_JIRA_MODAL) {
+        await openModal(payload.trigger_id, buildLinkJiraModal(bug.bugId));
+        return {};
+      }
     }
 
     if (action.action_id === ACTIONS.OPEN_REJECT_MODAL) {
