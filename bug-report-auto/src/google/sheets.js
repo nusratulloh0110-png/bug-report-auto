@@ -623,9 +623,7 @@ class GoogleSheetsService {
                 values: [{ userEnteredValue: "=$D2=\"В работе\"" }],
               },
               format: {
-                backgroundColorStyle: {
-                  rgbColor: { red: 1, green: 0.96, blue: 0.74 },
-                },
+                backgroundColor: { red: 1, green: 0.96, blue: 0.74 },
               },
             },
           },
@@ -649,9 +647,7 @@ class GoogleSheetsService {
                 values: [{ userEnteredValue: "=$D2=\"Дубликат\"" }],
               },
               format: {
-                backgroundColorStyle: {
-                  rgbColor: { red: 1, green: 1, blue: 1 },
-                },
+                backgroundColor: { red: 1, green: 1, blue: 1 },
               },
             },
           },
@@ -675,9 +671,7 @@ class GoogleSheetsService {
                 values: [{ userEnteredValue: "=$D2=\"Отклонен\"" }],
               },
               format: {
-                backgroundColorStyle: {
-                  rgbColor: { red: 0.98, green: 0.84, blue: 0.84 },
-                },
+                backgroundColor: { red: 0.98, green: 0.84, blue: 0.84 },
               },
             },
           },
@@ -701,9 +695,7 @@ class GoogleSheetsService {
                 values: [{ userEnteredValue: "=$D2=\"Исправлено\"" }],
               },
               format: {
-                backgroundColorStyle: {
-                  rgbColor: { red: 0.85, green: 0.94, blue: 0.85 },
-                },
+                backgroundColor: { red: 0.85, green: 0.94, blue: 0.85 },
               },
             },
           },
@@ -770,6 +762,15 @@ class GoogleSheetsService {
       spreadsheetId: this.spreadsheetId,
       requestBody: { requests },
     });
+  }
+
+  async reapplyFormatting() {
+    if (!this.enabled) {
+      return;
+    }
+
+    await this.initialize();
+    await this.applyFormatting();
   }
 
   async getBugRows() {

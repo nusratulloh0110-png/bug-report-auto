@@ -102,6 +102,16 @@ async function publishBugCard(bug, channelId) {
   return updated;
 }
 
+function runInBackground(task) {
+  setImmediate(() => {
+    Promise.resolve()
+      .then(task)
+      .catch((error) => {
+        console.error("Background task failed", error);
+      });
+  });
+}
+
 async function refreshBugCard(bug) {
   if (!bug.channelId || !bug.messageTs) {
     return bug;
@@ -264,14 +274,16 @@ export const slackService = {
     const callbackId = payload.view.callback_id;
 
     if (callbackId === CALLBACKS.BUG_CREATE_MODAL) {
-      await this.refreshRuntimeConfig();
-      const bug = bugStore.create(normalizeBugFromSubmission(payload.view, payload.user));
-      const publishedBug = await publishBugCard(bug, this.runtimeConfig.channelId);
+      runInBackground(async () => {
+        await this.refreshRuntimeConfig();
+        const bug = bugStore.create(normalizeBugFromSubmission(payload.view, payload.user));
+        const publishedBug = await publishBugCard(bug, this.runtimeConfig.channelId);
 
-      await notifyInThread(
-        publishedBug,
-        `Баг зарегистрирован как *#${publishedBug.bugId}*. Если нужно, прикрепите сюда скриншоты, видео или файлы отдельным сообщением в этот тред.`
-      );
+        await notifyInThread(
+          publishedBug,
+          `Баг зарегистрирован как *#${publishedBug.bugId}*. Если нужно, прикрепите сюда скриншоты, видео или файлы отдельным сообщением в этот тред.`
+        );
+      });
 
       return {
         response_action: "clear",
@@ -294,13 +306,15 @@ export const slackService = {
 
     if (callbackId === CALLBACKS.REJECT_MODAL) {
       const reason = extractPlainTextValue(payload.view.state, "reason_block", "reason_input");
-      await updateBugStatusFromAction(
-        bug.bugId,
-        moderatorPatch(payload.user, {
-          status: "rejected",
-          rejectionReason: reason,
-        }),
-        mentionReporter(bug, `баг *#${bug.bugId}* отклонен. Причина: ${reason}`)
+      runInBackground(() =>
+        updateBugStatusFromAction(
+          bug.bugId,
+          moderatorPatch(payload.user, {
+            status: "rejected",
+            rejectionReason: reason,
+          }),
+          mentionReporter(bug, `баг *#${bug.bugId}* отклонен. Причина: ${reason}`)
+        )
       );
       return { response_action: "clear" };
     }
@@ -322,13 +336,15 @@ export const slackService = {
         };
       }
 
-      await updateBugStatusFromAction(
-        bug.bugId,
-        moderatorPatch(payload.user, {
-          status: "duplicate",
-          duplicateOf: masterBugId,
-        }),
-        mentionReporter(bug, `баг *#${bug.bugId}* помечен как дубликат *#${masterBugId}*.`)
+      runInBackground(() =>
+        updateBugStatusFromAction(
+          bug.bugId,
+          moderatorPatch(payload.user, {
+            status: "duplicate",
+            duplicateOf: masterBugId,
+          }),
+          mentionReporter(bug, `баг *#${bug.bugId}* помечен как дубликат *#${masterBugId}*.`)
+        )
       );
       return { response_action: "clear" };
     }
@@ -336,13 +352,15 @@ export const slackService = {
     if (callbackId === CALLBACKS.LINK_JIRA_MODAL) {
       const jiraKey = extractPlainTextValue(payload.view.state, "jira_key_block", "jira_key_input");
       const jiraUrl = extractPlainTextValue(payload.view.state, "jira_url_block", "jira_url_input");
-      await updateBugStatusFromAction(
-        bug.bugId,
-        moderatorPatch(payload.user, {
-          jiraKey,
-          jiraUrl: jiraUrl || null,
-        }),
-        `Для бага *#${bug.bugId}* сохранена связь с Jira: ${jiraKey}`
+      runInBackground(() =>
+        updateBugStatusFromAction(
+          bug.bugId,
+          moderatorPatch(payload.user, {
+            jiraKey,
+            jiraUrl: jiraUrl || null,
+          }),
+          `Для бага *#${bug.bugId}* сохранена связь с Jira: ${jiraKey}`
+        )
       );
       return { response_action: "clear" };
     }
@@ -377,14 +395,16 @@ export const slackService = {
     ensureModerator(payload.user.id, this.runtimeConfig.moderatorIds);
 
     if (action.action_id === ACTIONS.TAKE_IN_WORK) {
-      await updateBugStatusFromAction(
-        bug.bugId,
-        moderatorPatch(payload.user, {
-          status: "triage",
-        }),
-        mentionReporter(
-          bug,
-          `баг *#${bug.bugId}* взят в работу модератором <@${payload.user.id}>.`
+      runInBackground(() =>
+        updateBugStatusFromAction(
+          bug.bugId,
+          moderatorPatch(payload.user, {
+            status: "triage",
+          }),
+          mentionReporter(
+            bug,
+            `баг *#${bug.bugId}* взят в работу модератором <@${payload.user.id}>.`
+          )
         )
       );
       return {
@@ -394,13 +414,15 @@ export const slackService = {
     }
 
     if (action.action_id === ACTIONS.MARK_FIXED) {
-      await updateBugStatusFromAction(
-        bug.bugId,
-        moderatorPatch(payload.user, {
-          status: "fixed",
-          fixedAt: new Date().toISOString(),
-        }),
-        mentionReporter(bug, `баг *#${bug.bugId}* исправлен.`)
+      runInBackground(() =>
+        updateBugStatusFromAction(
+          bug.bugId,
+          moderatorPatch(payload.user, {
+            status: "fixed",
+            fixedAt: new Date().toISOString(),
+          }),
+          mentionReporter(bug, `баг *#${bug.bugId}* исправлен.`)
+        )
       );
       return {
         response_type: "ephemeral",

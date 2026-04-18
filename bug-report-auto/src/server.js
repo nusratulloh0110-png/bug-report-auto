@@ -36,6 +36,11 @@ app.post("/internal/post-monthly-report", async (_request, reply) => {
   return reply.send({ ok: true });
 });
 
+app.post("/internal/reapply-sheet-formatting", async (_request, reply) => {
+  await googleSheetsService.reapplyFormatting();
+  return reply.send({ ok: true });
+});
+
 app.post("/slack/commands", async (request, reply) => {
   const rawBody = request.rawBody || "";
 
