@@ -73,6 +73,8 @@ function requestSafeLog(instance, error) {
   );
 }
 
+await slackService.initialize();
+
 const address = await app.listen({
   port: config.port,
   host: "0.0.0.0",

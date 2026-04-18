@@ -15,6 +15,10 @@ const PRIORITY_LABELS = {
   low: "Низкий",
 };
 
+function shouldShowModeratorActions(status) {
+  return status === "new";
+}
+
 function formatMultiline(text) {
   return text ? text.replace(/\n/g, "\n> ") : "—";
 }
@@ -29,7 +33,7 @@ export function buildBugBlocks(bug) {
   const duplicateText = bug.duplicateOf ? bug.duplicateOf : "—";
   const rejectionText = bug.rejectionReason || "—";
 
-  return [
+  const blocks = [
     {
       type: "header",
       text: plainText(`#${bug.bugId} Bug Report`),
@@ -73,7 +77,10 @@ export function buildBugBlocks(bug) {
         },
       ],
     },
-    {
+  ];
+
+  if (shouldShowModeratorActions(bug.status)) {
+    blocks.push({
       type: "actions",
       elements: [
         {
@@ -103,8 +110,10 @@ export function buildBugBlocks(bug) {
           value: encodeActionValue({ bugId: bug.bugId }),
         },
       ],
-    },
-  ];
+    });
+  }
+
+  return blocks;
 }
 
 export function buildLauncherBlocks() {

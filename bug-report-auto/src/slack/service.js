@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { config } from "../config.js";
+import { googleSheetsService } from "../google/sheets.js";
 import { bugStore } from "../store/bug-store.js";
 import { launcherStore } from "../store/launcher-store.js";
 import { buildBugBlocks, buildLauncherBlocks } from "./blocks.js";
@@ -83,6 +84,7 @@ async function publishBugCard(bug) {
     threadTs: response.ts,
   });
 
+  await googleSheetsService.syncBug(updated);
   return updated;
 }
 
@@ -157,12 +159,19 @@ async function updateBugStatusFromAction(bugId, patch, threadMessage) {
   }
 
   await refreshBugCard(bug);
+  await googleSheetsService.syncBug(bug);
   if (threadMessage) {
     await notifyInThread(bug, threadMessage);
   }
 }
 
 export const slackService = {
+  async initialize() {
+    await googleSheetsService.initialize();
+    const nextSequence = await googleSheetsService.getNextSequence();
+    bugStore.syncSequence(nextSequence);
+  },
+
   validateSlackRequest(rawBody, headers) {
     const timestamp = headers["x-slack-request-timestamp"];
     const signature = headers["x-slack-signature"];

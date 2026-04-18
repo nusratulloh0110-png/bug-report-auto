@@ -10,6 +10,12 @@ class BugStore {
     return `BUG-${number}`;
   }
 
+  syncSequence(nextSequence) {
+    if (Number.isInteger(nextSequence) && nextSequence > this.sequence) {
+      this.sequence = nextSequence;
+    }
+  }
+
   create(payload) {
     const bugId = this.generateId();
     const bug = {

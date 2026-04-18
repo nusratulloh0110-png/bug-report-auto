@@ -16,7 +16,7 @@ export function buildBugReportModal() {
         element: {
           type: "plain_text_input",
           action_id: "clinic_id_input",
-          placeholder: plainText("Например: CL-1024"),
+          placeholder: plainText("Например: 4"),
         },
       },
       {
@@ -42,7 +42,7 @@ export function buildBugReportModal() {
         element: {
           type: "plain_text_input",
           action_id: "section_input",
-          placeholder: plainText("Например: Пациенты, Оплата, Расписание"),
+          placeholder: plainText("Например: Касса, Склад, ЛИС"),
         },
       },
       {

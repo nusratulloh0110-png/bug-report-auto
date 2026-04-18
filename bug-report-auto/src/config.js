@@ -23,4 +23,11 @@ export const config = {
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean),
+  googleServiceAccountKeyFile:
+    process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE ||
+    "bug-report-bot-493711-c518a0fded50.json",
+  googleSheetsSpreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID || "",
+  googleClientEmail: process.env.GOOGLE_CLIENT_EMAIL || "",
+  googlePrivateKey: process.env.GOOGLE_PRIVATE_KEY || "",
+  googleProjectId: process.env.GOOGLE_PROJECT_ID || "",
 };
