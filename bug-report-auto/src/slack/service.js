@@ -63,6 +63,7 @@ function normalizeBugFromSubmission(view, user) {
   const state = view.state;
   return {
     clinicId: extractPlainTextValue(state, "clinic_id_block", "clinic_id_input"),
+    product: extractStaticValue(state, "product_block", "product_select"),
     description: extractPlainTextValue(state, "description_block", "description_input"),
     priority: extractStaticValue(state, "priority_block", "priority_select"),
     section: extractPlainTextValue(state, "section_block", "section_input"),
@@ -186,10 +187,13 @@ export const slackService = {
   runtimeConfig: {
     channelId: config.slackBugChannelId,
     moderatorIds: config.slackModeratorIds,
+    products: ["ЛИС", "Склад", "Касса"],
   },
 
   async initialize() {
     await googleSheetsService.initialize();
+    const persistedBugs = await googleSheetsService.loadPersistedBugs();
+    bugStore.load(persistedBugs);
     const nextSequence = await googleSheetsService.getNextSequence();
     bugStore.syncSequence(nextSequence);
     await this.refreshRuntimeConfig();
@@ -224,7 +228,7 @@ export const slackService = {
       };
     }
 
-    await openModal(command.trigger_id, buildBugReportModal());
+    await openModal(command.trigger_id, buildBugReportModal(this.runtimeConfig.products));
 
     return {
       response_type: "ephemeral",
@@ -350,7 +354,8 @@ export const slackService = {
     const action = payload.actions?.[0];
     
     if (action.action_id === ACTIONS.OPEN_BUG_MODAL) {
-      await openModal(payload.trigger_id, buildBugReportModal());
+      await this.refreshRuntimeConfig();
+      await openModal(payload.trigger_id, buildBugReportModal(this.runtimeConfig.products));
       return {};
     }
 

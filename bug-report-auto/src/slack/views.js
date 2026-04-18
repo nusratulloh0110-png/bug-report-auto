@@ -1,7 +1,17 @@
 import { CALLBACKS } from "./constants.js";
 import { plainText } from "./helpers.js";
 
-export function buildBugReportModal() {
+function buildProductOptions(products = []) {
+  const fallback = ["ЛИС", "Склад", "Касса"];
+  const values = products.length > 0 ? products : fallback;
+
+  return values.map((product) => ({
+    text: plainText(product),
+    value: product,
+  }));
+}
+
+export function buildBugReportModal(products = []) {
   return {
     type: "modal",
     callback_id: CALLBACKS.BUG_CREATE_MODAL,
@@ -17,6 +27,17 @@ export function buildBugReportModal() {
           type: "plain_text_input",
           action_id: "clinic_id_input",
           placeholder: plainText("Например: 4"),
+        },
+      },
+      {
+        type: "input",
+        block_id: "product_block",
+        label: plainText("Продукт"),
+        element: {
+          type: "static_select",
+          action_id: "product_select",
+          placeholder: plainText("Выберите продукт"),
+          options: buildProductOptions(products),
         },
       },
       {
@@ -42,7 +63,7 @@ export function buildBugReportModal() {
         element: {
           type: "plain_text_input",
           action_id: "section_input",
-          placeholder: plainText("Например: Касса, Склад, ЛИС"),
+          placeholder: plainText("Например: Пациенты - Беременные"),
         },
       },
       {

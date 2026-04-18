@@ -7,6 +7,8 @@ const SHEETS = {
   dashboard: "Сводка",
   settings: "Настройки",
   moderators: "Модераторы",
+  products: "Продукты",
+  system: "Служебные данные",
 };
 
 const BUG_HEADERS = [
@@ -15,6 +17,7 @@ const BUG_HEADERS = [
   "Обновлен",
   "Статус",
   "Модератор",
+  "Продукт",
   "Айди клиники",
   "Приоритет",
   "Раздел",
@@ -30,6 +33,23 @@ const BUG_HEADERS = [
 
 const SETTINGS_HEADERS = ["Ключ", "Значение", "Описание"];
 const MODERATOR_HEADERS = ["Slack ID", "Имя / комментарий", "Активен"];
+const PRODUCT_HEADERS = ["Продукт", "Активен", "Комментарий"];
+const SYSTEM_HEADERS = [
+  "Bug ID",
+  "Reporter ID",
+  "Reporter Name",
+  "Slack Channel ID",
+  "Slack Message TS",
+  "Slack Thread TS",
+  "Assigned Moderator ID",
+  "Assigned Moderator Name",
+  "Status Raw",
+  "Priority Raw",
+  "Product",
+  "Fixed At ISO",
+  "Created At ISO",
+  "Updated At ISO",
+];
 
 const STATUS_LABELS = {
   new: "Новый",
@@ -104,6 +124,7 @@ function asSheetRow(bug) {
     formatDisplayDate(bug.updatedAt),
     formatStatus(bug.status),
     bug.assignedModeratorName || bug.assignedModeratorId || "",
+    bug.product || "",
     bug.clinicId || "",
     formatPriority(bug.priority),
     bug.section || "",
@@ -131,17 +152,58 @@ function rowsToBugEntries(rows) {
       updatedAt: row[2] || "",
       status: row[3] || "",
       moderator: row[4] || "",
-      clinicId: row[5] || "",
-      priority: row[6] || "",
-      section: row[7] || "",
-      description: row[8] || "",
-      attachmentNote: row[9] || "",
-      reporter: row[10] || "",
-      fixedAt: row[11] || "",
-      jiraKey: row[12] || "",
-      jiraUrl: row[13] || "",
-      duplicateOf: row[14] || "",
-      rejectionReason: row[15] || "",
+      product: row[5] || "",
+      clinicId: row[6] || "",
+      priority: row[7] || "",
+      section: row[8] || "",
+      description: row[9] || "",
+      attachmentNote: row[10] || "",
+      reporter: row[11] || "",
+      fixedAt: row[12] || "",
+      jiraKey: row[13] || "",
+      jiraUrl: row[14] || "",
+      duplicateOf: row[15] || "",
+      rejectionReason: row[16] || "",
+    }));
+}
+
+function asSystemRow(bug) {
+  return [
+    bug.bugId,
+    bug.reporterId || "",
+    bug.reporterName || "",
+    bug.channelId || "",
+    bug.messageTs || "",
+    bug.threadTs || "",
+    bug.assignedModeratorId || "",
+    bug.assignedModeratorName || "",
+    bug.status || "",
+    bug.priority || "",
+    bug.product || "",
+    bug.fixedAt || "",
+    bug.createdAt || "",
+    bug.updatedAt || "",
+  ];
+}
+
+function rowsToSystemBugs(rows) {
+  return rows
+    .filter((row) => row[0])
+    .map((row) => ({
+      bugId: row[0] || "",
+      reporterId: row[1] || "",
+      reporterName: row[2] || "",
+      channelId: row[3] || "",
+      messageTs: row[4] || "",
+      threadTs: row[5] || "",
+      assignedModeratorId: row[6] || null,
+      assignedModeratorName: row[7] || null,
+      status: row[8] || "new",
+      priority: row[9] || "",
+      product: row[10] || "",
+      fixedAt: row[11] || null,
+      createdAt: row[12] || "",
+      updatedAt: row[13] || "",
     }));
 }
 
@@ -194,7 +256,7 @@ function buildDashboardValues(entries) {
       entry.status,
       entry.clinicId,
       entry.priority,
-      entry.section,
+      `${entry.product ? `${entry.product} / ` : ""}${entry.section}`,
       entry.createdAt,
       "",
       "",
@@ -266,11 +328,16 @@ class GoogleSheetsService {
               ? 3
               : title === SHEETS.moderators
                 ? 3
+                : title === SHEETS.products
+                  ? 3
+                  : title === SHEETS.system
+                    ? SYSTEM_HEADERS.length
                 : BUG_HEADERS.length;
         requests.push({
           addSheet: {
             properties: {
               title,
+              hidden: title === SHEETS.system,
               gridProperties: {
                 rowCount: title === SHEETS.dashboard ? 80 : 1000,
                 columnCount,
@@ -300,6 +367,8 @@ class GoogleSheetsService {
     await this.ensureBugHeaders();
     await this.ensureSettingsSheet();
     await this.ensureModeratorsSheet();
+    await this.ensureProductsSheet();
+    await this.ensureSystemSheet();
     await this.refreshDashboard();
     await this.applyFormatting();
   }
@@ -307,7 +376,7 @@ class GoogleSheetsService {
   async ensureBugHeaders() {
     await this.sheetsApi.spreadsheets.values.update({
       spreadsheetId: this.spreadsheetId,
-      range: `${SHEETS.bugs}!A1:P1`,
+      range: `${SHEETS.bugs}!A1:Q1`,
       valueInputOption: "RAW",
       requestBody: { values: [BUG_HEADERS] },
     });
@@ -413,6 +482,45 @@ class GoogleSheetsService {
     }
   }
 
+  async ensureProductsSheet() {
+    await this.sheetsApi.spreadsheets.values.update({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.products}!A1:C1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [PRODUCT_HEADERS] },
+    });
+
+    const existing = await this.sheetsApi.spreadsheets.values.get({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.products}!A2:C100`,
+    });
+
+    const rows = existing.data.values || [];
+    const existingProducts = new Set(rows.map((row) => row[0]).filter(Boolean));
+    const defaults = ["ЛИС", "Склад", "Касса"]
+      .filter((product) => !existingProducts.has(product))
+      .map((product) => [product, "TRUE", "Базовый продукт"]);
+
+    if (defaults.length > 0) {
+      await this.sheetsApi.spreadsheets.values.append({
+        spreadsheetId: this.spreadsheetId,
+        range: `${SHEETS.products}!A:C`,
+        valueInputOption: "RAW",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: { values: defaults },
+      });
+    }
+  }
+
+  async ensureSystemSheet() {
+    await this.sheetsApi.spreadsheets.values.update({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.system}!A1:N1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [SYSTEM_HEADERS] },
+    });
+  }
+
   async applyFormatting() {
     await this.resetBugConditionalFormatting();
 
@@ -467,6 +575,30 @@ class GoogleSheetsService {
           cell: {
             userEnteredFormat: {
               backgroundColorStyle: { rgbColor: { red: 0.89, green: 0.95, blue: 0.89 } },
+              textFormat: { bold: true },
+            },
+          },
+          fields: "userEnteredFormat(backgroundColorStyle,textFormat)",
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId: this.sheetIds[SHEETS.products], startRowIndex: 0, endRowIndex: 1 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColorStyle: { rgbColor: { red: 0.9, green: 0.9, blue: 0.98 } },
+              textFormat: { bold: true },
+            },
+          },
+          fields: "userEnteredFormat(backgroundColorStyle,textFormat)",
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId: this.sheetIds[SHEETS.system], startRowIndex: 0, endRowIndex: 1 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColorStyle: { rgbColor: { red: 0.92, green: 0.92, blue: 0.92 } },
               textFormat: { bold: true },
             },
           },
@@ -635,7 +767,7 @@ class GoogleSheetsService {
   async getBugRows() {
     const response = await this.sheetsApi.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
-      range: `${SHEETS.bugs}!A2:P`,
+      range: `${SHEETS.bugs}!A2:Q`,
     });
 
     return rowsToBugEntries(response.data.values || []);
@@ -699,26 +831,91 @@ class GoogleSheetsService {
     await this.initialize();
 
     const row = asSheetRow(bug);
+    const systemRow = asSystemRow(bug);
     const existingRow = await this.findBugRow(bug.bugId);
 
     if (existingRow) {
       await this.sheetsApi.spreadsheets.values.update({
         spreadsheetId: this.spreadsheetId,
-        range: `${SHEETS.bugs}!A${existingRow}:P${existingRow}`,
+        range: `${SHEETS.bugs}!A${existingRow}:Q${existingRow}`,
         valueInputOption: "RAW",
         requestBody: { values: [row] },
+      });
+      await this.sheetsApi.spreadsheets.values.update({
+        spreadsheetId: this.spreadsheetId,
+        range: `${SHEETS.system}!A${existingRow}:N${existingRow}`,
+        valueInputOption: "RAW",
+        requestBody: { values: [systemRow] },
       });
     } else {
       await this.sheetsApi.spreadsheets.values.append({
         spreadsheetId: this.spreadsheetId,
-        range: `${SHEETS.bugs}!A:P`,
+        range: `${SHEETS.bugs}!A:Q`,
         valueInputOption: "RAW",
         insertDataOption: "INSERT_ROWS",
         requestBody: { values: [row] },
       });
+      await this.sheetsApi.spreadsheets.values.append({
+        spreadsheetId: this.spreadsheetId,
+        range: `${SHEETS.system}!A:N`,
+        valueInputOption: "RAW",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: { values: [systemRow] },
+      });
     }
 
     await this.refreshDashboard();
+  }
+
+  async loadPersistedBugs() {
+    if (!this.enabled) {
+      return [];
+    }
+
+    await this.initialize();
+
+    const [visibleResponse, systemResponse] = await Promise.all([
+      this.sheetsApi.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: `${SHEETS.bugs}!A2:Q`,
+      }),
+      this.sheetsApi.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: `${SHEETS.system}!A2:N`,
+      }),
+    ]);
+
+    const visibleEntries = rowsToBugEntries(visibleResponse.data.values || []);
+    const systemEntries = rowsToSystemBugs(systemResponse.data.values || []);
+    const systemById = new Map(systemEntries.map((entry) => [entry.bugId, entry]));
+
+    return visibleEntries.map((entry) => {
+      const system = systemById.get(entry.bugId) || {};
+      return {
+        bugId: entry.bugId,
+        createdAt: system.createdAt || parseDisplayDate(entry.createdAt)?.toISOString() || new Date().toISOString(),
+        updatedAt: system.updatedAt || parseDisplayDate(entry.updatedAt)?.toISOString() || new Date().toISOString(),
+        status: system.status || "new",
+        assignedModeratorId: system.assignedModeratorId || null,
+        assignedModeratorName: system.assignedModeratorName || entry.moderator || null,
+        product: system.product || entry.product || "",
+        clinicId: entry.clinicId || "",
+        priority: system.priority || "",
+        section: entry.section || "",
+        description: entry.description || "",
+        attachmentNote: entry.attachmentNote || "",
+        reporterId: system.reporterId || "",
+        reporterName: system.reporterName || entry.reporter || "",
+        fixedAt: system.fixedAt || null,
+        jiraKey: entry.jiraKey || "",
+        jiraUrl: entry.jiraUrl || "",
+        duplicateOf: entry.duplicateOf || null,
+        rejectionReason: entry.rejectionReason || null,
+        channelId: system.channelId || "",
+        messageTs: system.messageTs || "",
+        threadTs: system.threadTs || "",
+      };
+    });
   }
 
   async getRuntimeConfig() {
@@ -732,6 +929,10 @@ class GoogleSheetsService {
       spreadsheetId: this.spreadsheetId,
       range: `${SHEETS.moderators}!A2:C100`,
     });
+    const productResponse = await this.sheetsApi.spreadsheets.values.get({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.products}!A2:C100`,
+    });
 
     const settingsMap = new Map(
       (settingsResponse.data.values || [])
@@ -742,10 +943,14 @@ class GoogleSheetsService {
     const moderatorIds = (moderatorResponse.data.values || [])
       .filter((row) => row[0] && normalizeBoolean(row[2]))
       .map((row) => row[0]);
+    const products = (productResponse.data.values || [])
+      .filter((row) => row[0] && normalizeBoolean(row[1]))
+      .map((row) => row[0]);
 
     return {
       channelId: settingsMap.get("slack_bug_channel_id") || config.slackBugChannelId,
       moderatorIds: moderatorIds.length > 0 ? moderatorIds : config.slackModeratorIds,
+      products: products.length > 0 ? products : ["ЛИС", "Склад", "Касса"],
       weeklyReportEnabled: normalizeBoolean(settingsMap.get("weekly_report_enabled")),
       weeklyReportTime: settingsMap.get("weekly_report_time") || "09:00",
       weeklyReportTimezone: settingsMap.get("weekly_report_timezone") || config.reportTimezone,

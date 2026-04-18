@@ -104,6 +104,7 @@ export function buildBugBlocks(bug) {
         { type: "mrkdwn", text: `*Приоритет:*\n${PRIORITY_LABELS[bug.priority] || bug.priority}` },
         { type: "mrkdwn", text: `*Репортер:*\n<@${bug.reporterId}>` },
         { type: "mrkdwn", text: `*Модератор:*\n${moderatorText}` },
+        { type: "mrkdwn", text: `*Продукт:*\n${bug.product || "—"}` },
         { type: "mrkdwn", text: `*Айди клиники:*\n${bug.clinicId}` },
         { type: "mrkdwn", text: `*Раздел:*\n${bug.section}` },
         { type: "mrkdwn", text: `*Связь с Jira:*\n${jiraText}` },

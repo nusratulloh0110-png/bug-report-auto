@@ -16,6 +16,21 @@ class BugStore {
     }
   }
 
+  load(bugs) {
+    this.bugs.clear();
+
+    let maxSequence = 0;
+    for (const bug of bugs) {
+      this.bugs.set(bug.bugId, bug);
+      const match = String(bug.bugId || "").match(/^BUG-(\d+)$/);
+      if (match) {
+        maxSequence = Math.max(maxSequence, Number(match[1]));
+      }
+    }
+
+    this.sequence = Math.max(this.sequence, maxSequence + 1);
+  }
+
   create(payload) {
     const bugId = this.generateId();
     const bug = {
