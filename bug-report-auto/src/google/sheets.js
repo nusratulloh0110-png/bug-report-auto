@@ -208,16 +208,16 @@ function rowsToSystemBugs(rows) {
 }
 
 function buildDashboardValues(entries) {
-  const sectionCounts = new Map();
+  const productCounts = new Map();
   for (const entry of entries) {
-    const section = entry.section || "Не указан";
-    sectionCounts.set(section, (sectionCounts.get(section) || 0) + 1);
+    const product = entry.product || "Не указан";
+    productCounts.set(product, (productCounts.get(product) || 0) + 1);
   }
 
-  const sortedSections = Array.from(sectionCounts.entries()).sort((a, b) => b[1] - a[1]);
-  const topSections = sortedSections.slice(0, 4);
-  while (topSections.length < 4) {
-    topSections.push(["—", 0]);
+  const sortedProducts = Array.from(productCounts.entries()).sort((a, b) => b[1] - a[1]);
+  const topProducts = sortedProducts.slice(0, 4);
+  while (topProducts.length < 4) {
+    topProducts.push(["—", 0]);
   }
 
   const latest = entries
@@ -240,11 +240,11 @@ function buildDashboardValues(entries) {
     ["Дубликаты", entries.filter((entry) => entry.status === "Дубликат").length, "", "", "", "", "", ""],
     ["Исправленные", entries.filter((entry) => entry.status === "Исправлено").length, "", "", "", "", "", ""],
     ["", "", "", "", "", "", "", ""],
-    ["Статусы", "Количество", "", "Приоритеты", "Количество", "", "Разделы", "Количество"],
-    ["Новый", entries.filter((entry) => entry.status === "Новый").length, "", "Очень высокий", entries.filter((entry) => entry.priority === "Очень высокий").length, "", topSections[0][0], topSections[0][1]],
-    ["В работе", entries.filter((entry) => entry.status === "В работе").length, "", "Высокий", entries.filter((entry) => entry.priority === "Высокий").length, "", topSections[1][0], topSections[1][1]],
-    ["Отклонен", entries.filter((entry) => entry.status === "Отклонен").length, "", "Средний", entries.filter((entry) => entry.priority === "Средний").length, "", topSections[2][0], topSections[2][1]],
-    ["Дубликат", entries.filter((entry) => entry.status === "Дубликат").length, "", "Низкий", entries.filter((entry) => entry.priority === "Низкий").length, "", topSections[3][0], topSections[3][1]],
+    ["Статусы", "Количество", "", "Приоритеты", "Количество", "", "Продукты", "Количество"],
+    ["Новый", entries.filter((entry) => entry.status === "Новый").length, "", "Очень высокий", entries.filter((entry) => entry.priority === "Очень высокий").length, "", topProducts[0][0], topProducts[0][1]],
+    ["В работе", entries.filter((entry) => entry.status === "В работе").length, "", "Высокий", entries.filter((entry) => entry.priority === "Высокий").length, "", topProducts[1][0], topProducts[1][1]],
+    ["Отклонен", entries.filter((entry) => entry.status === "Отклонен").length, "", "Средний", entries.filter((entry) => entry.priority === "Средний").length, "", topProducts[2][0], topProducts[2][1]],
+    ["Дубликат", entries.filter((entry) => entry.status === "Дубликат").length, "", "Низкий", entries.filter((entry) => entry.priority === "Низкий").length, "", topProducts[3][0], topProducts[3][1]],
     ["", "", "", "", "", "", "", ""],
     ["Последние 10 багов", "", "", "", "", "", "", ""],
     ["ID бага", "Статус", "Клиника", "Приоритет", "Раздел", "Создан", "", ""],
@@ -1016,13 +1016,13 @@ class GoogleSheetsService {
     });
 
     const countBy = (field, value) => filtered.filter((entry) => entry[field] === value).length;
-    const sections = new Map();
+    const products = new Map();
     for (const entry of filtered) {
-      const section = entry.section || "Не указан";
-      sections.set(section, (sections.get(section) || 0) + 1);
+      const product = entry.product || "Не указан";
+      products.set(product, (products.get(product) || 0) + 1);
     }
 
-    const topSections = Array.from(sections.entries())
+    const topProducts = Array.from(products.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([name, count]) => `• ${name}: ${count}`)
@@ -1046,7 +1046,7 @@ class GoogleSheetsService {
       `Высокий приоритет: ${countBy("priority", "Высокий")}`,
       `Средний приоритет: ${countBy("priority", "Средний")}`,
       `Низкий приоритет: ${countBy("priority", "Низкий")}`,
-      topSections ? `Топ разделов:\n${topSections}` : "Топ разделов: нет данных",
+      topProducts ? `Топ продуктов:\n${topProducts}` : "Топ продуктов: нет данных",
     ].join("\n");
   }
 }
