@@ -53,6 +53,10 @@ class BugStore {
     this.bugs.set(bugId, next);
     return next;
   }
+
+  list() {
+    return Array.from(this.bugs.values());
+  }
 }
 
 export const bugStore = new BugStore();

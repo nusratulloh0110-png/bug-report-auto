@@ -139,7 +139,7 @@ export function buildLinkJiraModal(bugId) {
       {
         type: "input",
         block_id: "jira_key_block",
-        label: plainText("Jira key"),
+        label: plainText("Ключ Jira"),
         element: {
           type: "plain_text_input",
           action_id: "jira_key_input",
@@ -150,7 +150,7 @@ export function buildLinkJiraModal(bugId) {
         type: "input",
         block_id: "jira_url_block",
         optional: true,
-        label: plainText("Jira URL"),
+        label: plainText("Ссылка Jira"),
         element: {
           type: "plain_text_input",
           action_id: "jira_url_input",

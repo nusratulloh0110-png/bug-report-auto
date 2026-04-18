@@ -46,8 +46,8 @@ function validateSlackSignature(rawBody, timestamp, signature) {
   return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
 }
 
-function ensureModerator(userId) {
-  if (!config.slackModeratorIds.includes(userId)) {
+function ensureModerator(userId, moderatorIds) {
+  if (!moderatorIds.includes(userId)) {
     const error = new Error("Only moderators can use this action.");
     error.statusCode = 403;
     throw error;
@@ -71,10 +71,10 @@ function normalizeBugFromSubmission(view, user) {
   };
 }
 
-async function publishBugCard(bug) {
+async function publishBugCard(bug, channelId) {
   const response = await slackClient.chat.postMessage({
-    channel: config.slackBugChannelId,
-    text: `#${bug.bugId} Bug Report`,
+    channel: channelId,
+    text: `#${bug.bugId} Баг-репорт`,
     blocks: buildBugBlocks(bug),
   });
 
@@ -96,7 +96,7 @@ async function refreshBugCard(bug) {
   await slackClient.chat.update({
     channel: bug.channelId,
     ts: bug.messageTs,
-    text: `#${bug.bugId} Bug Report`,
+    text: `#${bug.bugId} Баг-репорт`,
     blocks: buildBugBlocks(bug),
   });
 
@@ -130,7 +130,7 @@ async function publishOrUpdateLauncher(channelId) {
       await slackClient.chat.update({
         channel: channelId,
         ts: existing.messageTs,
-        text: "Report Bug",
+        text: "Сообщить о баге",
         blocks: buildLauncherBlocks(),
       });
 
@@ -142,7 +142,7 @@ async function publishOrUpdateLauncher(channelId) {
 
   const response = await slackClient.chat.postMessage({
     channel: channelId,
-    text: "Report Bug",
+    text: "Сообщить о баге",
     blocks: buildLauncherBlocks(),
   });
 
@@ -166,10 +166,25 @@ async function updateBugStatusFromAction(bugId, patch, threadMessage) {
 }
 
 export const slackService = {
+  runtimeConfig: {
+    channelId: config.slackBugChannelId,
+    moderatorIds: config.slackModeratorIds,
+  },
+
   async initialize() {
     await googleSheetsService.initialize();
     const nextSequence = await googleSheetsService.getNextSequence();
     bugStore.syncSequence(nextSequence);
+    await this.refreshRuntimeConfig();
+  },
+
+  async refreshRuntimeConfig() {
+    if (!googleSheetsService.enabled) {
+      return this.runtimeConfig;
+    }
+
+    this.runtimeConfig = await googleSheetsService.getRuntimeConfig();
+    return this.runtimeConfig;
   },
 
   validateSlackRequest(rawBody, headers) {
@@ -179,10 +194,16 @@ export const slackService = {
   },
 
   async handleSlashCommand(command) {
+    await this.refreshRuntimeConfig();
+
+    if (command.command === "/report") {
+      return this.handleReportCommand(command);
+    }
+
     if (command.command !== "/bug") {
       return {
         response_type: "ephemeral",
-        text: `Unsupported command: ${command.command}`,
+        text: `Команда не поддерживается: ${command.command}`,
       };
     }
 
@@ -191,6 +212,18 @@ export const slackService = {
     return {
       response_type: "ephemeral",
       text: "Форма создания бага открыта.",
+    };
+  },
+
+  async handleReportCommand(command) {
+    const range = parseReportRange(command.text || "");
+    const reportText = googleSheetsService.enabled
+      ? await googleSheetsService.buildReportSummary(range)
+      : buildInMemoryReportSummary(bugStore.list(), range);
+
+    return {
+      response_type: "in_channel",
+      text: reportText,
     };
   },
 
@@ -210,8 +243,9 @@ export const slackService = {
     const callbackId = payload.view.callback_id;
 
     if (callbackId === CALLBACKS.BUG_CREATE_MODAL) {
+      await this.refreshRuntimeConfig();
       const bug = bugStore.create(normalizeBugFromSubmission(payload.view, payload.user));
-      const publishedBug = await publishBugCard(bug);
+      const publishedBug = await publishBugCard(bug, this.runtimeConfig.channelId);
 
       await notifyInThread(
         publishedBug,
@@ -234,7 +268,8 @@ export const slackService = {
       };
     }
 
-    ensureModerator(payload.user.id);
+    await this.refreshRuntimeConfig();
+    ensureModerator(payload.user.id, this.runtimeConfig.moderatorIds);
 
     if (callbackId === CALLBACKS.REJECT_MODAL) {
       const reason = extractPlainTextValue(payload.view.state, "reason_block", "reason_input");
@@ -303,7 +338,8 @@ export const slackService = {
       };
     }
 
-    ensureModerator(payload.user.id);
+    await this.refreshRuntimeConfig();
+    ensureModerator(payload.user.id, this.runtimeConfig.moderatorIds);
 
     if (action.action_id === ACTIONS.TAKE_IN_WORK) {
       await updateBugStatusFromAction(
@@ -335,7 +371,78 @@ export const slackService = {
     return {};
   },
 
-  async postLauncherMessage(channelId = config.slackBugChannelId) {
-    return publishOrUpdateLauncher(channelId);
+  async postLauncherMessage(channelId) {
+    await this.refreshRuntimeConfig();
+    return publishOrUpdateLauncher(channelId ?? this.runtimeConfig.channelId);
+  },
+
+  async postPeriodicReport(kind = "weekly") {
+    await this.refreshRuntimeConfig();
+    const now = new Date();
+    const startDate = new Date(now);
+    startDate.setDate(now.getDate() - (kind === "monthly" ? 30 : 7));
+    const text = await googleSheetsService.buildReportSummary({
+      startDate,
+      endDate: now,
+    });
+
+    await slackClient.chat.postMessage({
+      channel: this.runtimeConfig.channelId,
+      text,
+    });
   },
 };
+
+function parseSingleDate(value) {
+  const trimmed = String(value || "").trim();
+  const dotMatch = trimmed.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (dotMatch) {
+    const [, day, month, year] = dotMatch;
+    return new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0);
+  }
+
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    return new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0);
+  }
+
+  return null;
+}
+
+function parseReportRange(text) {
+  const matches = String(text || "").match(/\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2}/g) || [];
+  if (matches.length >= 2) {
+    const startDate = parseSingleDate(matches[0]);
+    const endDate = parseSingleDate(matches[1]);
+    if (startDate && endDate) {
+      endDate.setHours(23, 59, 59, 999);
+      return { startDate, endDate };
+    }
+  }
+
+  return {};
+}
+
+function buildInMemoryReportSummary(bugs, range) {
+  const filtered = bugs.filter((bug) => {
+    const createdAt = new Date(bug.createdAt);
+    if (range.startDate && createdAt < range.startDate) {
+      return false;
+    }
+    if (range.endDate && createdAt > range.endDate) {
+      return false;
+    }
+    return true;
+  });
+
+  const countBy = (field, value) => filtered.filter((bug) => bug[field] === value).length;
+  return [
+    `*Отчет по багам*`,
+    `Всего: ${filtered.length}`,
+    `Новые: ${countBy("status", "new")}`,
+    `В работе: ${countBy("status", "triage")}`,
+    `Отклоненные: ${countBy("status", "rejected")}`,
+    `Дубликаты: ${countBy("status", "duplicate")}`,
+  ].join("\n");
+}

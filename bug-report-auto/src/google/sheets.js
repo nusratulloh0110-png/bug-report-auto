@@ -2,46 +2,110 @@ import path from "node:path";
 import { google } from "googleapis";
 import { config } from "../config.js";
 
-const BUGS_SHEET_TITLE = "Bugs";
-const DASHBOARD_SHEET_TITLE = "Dashboard";
+const SHEETS = {
+  bugs: "Реестр багов",
+  dashboard: "Сводка",
+  settings: "Настройки",
+  moderators: "Модераторы",
+};
 
 const BUG_HEADERS = [
-  "Bug ID",
-  "Created At",
-  "Updated At",
-  "Status",
-  "Clinic ID",
-  "Priority",
-  "Section",
-  "Description",
-  "Attachment Note",
-  "Reporter ID",
-  "Reporter Name",
-  "Slack Channel ID",
-  "Slack Message TS",
-  "Slack Thread TS",
+  "ID бага",
+  "Создан",
+  "Обновлен",
+  "Статус",
+  "Айди клиники",
+  "Приоритет",
+  "Раздел",
+  "Описание",
+  "Комментарий к файлу",
+  "Репортер",
   "Jira Key",
   "Jira URL",
-  "Duplicate Of",
-  "Rejection Reason",
+  "Дубликат",
+  "Причина отклонения",
 ];
+
+const SETTINGS_HEADERS = ["Ключ", "Значение", "Описание"];
+const MODERATOR_HEADERS = ["Slack ID", "Имя / комментарий", "Активен"];
+
+const STATUS_LABELS = {
+  new: "Новый",
+  triage: "В работе",
+  rejected: "Отклонен",
+  duplicate: "Дубликат",
+};
+
+const PRIORITY_LABELS = {
+  very_high: "Очень высокий",
+  high: "Высокий",
+  medium: "Средний",
+  low: "Низкий",
+};
+
+function formatDisplayDate(dateValue) {
+  return new Date(dateValue).toLocaleString("ru-RU", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+function parseDisplayDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  const isoDate = new Date(value);
+  if (!Number.isNaN(isoDate.getTime())) {
+    return isoDate;
+  }
+
+  const match = String(value).match(
+    /^(\d{2})\.(\d{2})\.(\d{4}),\s*(\d{2}):(\d{2}):(\d{2})$/
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const [, day, month, year, hour, minute, second] = match;
+  return new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second)
+  );
+}
+
+function formatStatus(status) {
+  const normalized = String(status || "").trim();
+  return STATUS_LABELS[normalized] || normalized || "—";
+}
+
+function formatPriority(priority) {
+  const normalized = String(priority || "").trim();
+  return PRIORITY_LABELS[normalized] || normalized || "—";
+}
 
 function asSheetRow(bug) {
   return [
     bug.bugId,
-    bug.createdAt,
-    bug.updatedAt,
-    bug.status,
+    formatDisplayDate(bug.createdAt),
+    formatDisplayDate(bug.updatedAt),
+    formatStatus(bug.status),
     bug.clinicId || "",
-    bug.priority || "",
+    formatPriority(bug.priority),
     bug.section || "",
     bug.description || "",
     bug.attachmentNote || "",
-    bug.reporterId || "",
-    bug.reporterName || "",
-    bug.channelId || "",
-    bug.messageTs || "",
-    bug.threadTs || "",
+    bug.reporterName || bug.reporterId || "",
     bug.jiraKey || "",
     bug.jiraUrl || "",
     bug.duplicateOf || "",
@@ -49,8 +113,91 @@ function asSheetRow(bug) {
   ];
 }
 
-function escapeSheetTitle(value) {
-  return `'${value.replace(/'/g, "''")}'`;
+function normalizeBoolean(value) {
+  return String(value || "").trim().toLowerCase() !== "false";
+}
+
+function rowsToBugEntries(rows) {
+  return rows
+    .filter((row) => row[0])
+    .map((row) => ({
+      bugId: row[0] || "",
+      createdAt: row[1] || "",
+      updatedAt: row[2] || "",
+      status: row[3] || "",
+      clinicId: row[4] || "",
+      priority: row[5] || "",
+      section: row[6] || "",
+      description: row[7] || "",
+      attachmentNote: row[8] || "",
+      reporter: row[9] || "",
+      jiraKey: row[10] || "",
+      jiraUrl: row[11] || "",
+      duplicateOf: row[12] || "",
+      rejectionReason: row[13] || "",
+    }));
+}
+
+function buildDashboardValues(entries) {
+  const sectionCounts = new Map();
+  for (const entry of entries) {
+    const section = entry.section || "Не указан";
+    sectionCounts.set(section, (sectionCounts.get(section) || 0) + 1);
+  }
+
+  const sortedSections = Array.from(sectionCounts.entries()).sort((a, b) => b[1] - a[1]);
+  const topSections = sortedSections.slice(0, 4);
+  while (topSections.length < 4) {
+    topSections.push(["—", 0]);
+  }
+
+  const latest = entries
+    .slice()
+    .sort((a, b) => {
+      const left = parseDisplayDate(a.createdAt)?.getTime() || 0;
+      const right = parseDisplayDate(b.createdAt)?.getTime() || 0;
+      return right - left;
+    })
+    .slice(0, 10);
+
+  const values = [
+    ["Центр отчетности багов", "", "", "", "", "", "", ""],
+    ["Последнее обновление", formatDisplayDate(new Date()), "", "", "", "", "", ""],
+    ["", "", "", "", "", "", "", ""],
+    ["Всего багов", entries.length, "", "", "", "", "", ""],
+    ["Новые", entries.filter((entry) => entry.status === "Новый").length, "", "", "", "", "", ""],
+    ["В работе", entries.filter((entry) => entry.status === "В работе").length, "", "", "", "", "", ""],
+    ["Отклоненные", entries.filter((entry) => entry.status === "Отклонен").length, "", "", "", "", "", ""],
+    ["Дубликаты", entries.filter((entry) => entry.status === "Дубликат").length, "", "", "", "", "", ""],
+    ["", "", "", "", "", "", "", ""],
+    ["Статусы", "Количество", "", "Приоритеты", "Количество", "", "Разделы", "Количество"],
+    ["Новый", entries.filter((entry) => entry.status === "Новый").length, "", "Очень высокий", entries.filter((entry) => entry.priority === "Очень высокий").length, "", topSections[0][0], topSections[0][1]],
+    ["В работе", entries.filter((entry) => entry.status === "В работе").length, "", "Высокий", entries.filter((entry) => entry.priority === "Высокий").length, "", topSections[1][0], topSections[1][1]],
+    ["Отклонен", entries.filter((entry) => entry.status === "Отклонен").length, "", "Средний", entries.filter((entry) => entry.priority === "Средний").length, "", topSections[2][0], topSections[2][1]],
+    ["Дубликат", entries.filter((entry) => entry.status === "Дубликат").length, "", "Низкий", entries.filter((entry) => entry.priority === "Низкий").length, "", topSections[3][0], topSections[3][1]],
+    ["", "", "", "", "", "", "", ""],
+    ["Последние 10 багов", "", "", "", "", "", "", ""],
+    ["ID бага", "Статус", "Клиника", "Приоритет", "Раздел", "Создан", "", ""],
+  ];
+
+  for (const entry of latest) {
+    values.push([
+      entry.bugId,
+      entry.status,
+      entry.clinicId,
+      entry.priority,
+      entry.section,
+      entry.createdAt,
+      "",
+      "",
+    ]);
+  }
+
+  while (values.length < 28) {
+    values.push(["", "", "", "", "", "", "", ""]);
+  }
+
+  return values;
 }
 
 class GoogleSheetsService {
@@ -102,40 +249,22 @@ class GoogleSheetsService {
     );
     const requests = [];
 
-    if (!byTitle.has(BUGS_SHEET_TITLE)) {
-      requests.push({
-        addSheet: {
-          properties: {
-            title: BUGS_SHEET_TITLE,
-            gridProperties: {
-              rowCount: 1000,
-              columnCount: BUG_HEADERS.length + 2,
-              frozenRowCount: 1,
-            },
-            tabColorStyle: {
-              rgbColor: { red: 0.11, green: 0.56, blue: 0.48 },
-            },
-          },
-        },
-      });
-    }
-
-    if (!byTitle.has(DASHBOARD_SHEET_TITLE)) {
-      requests.push({
-        addSheet: {
-          properties: {
-            title: DASHBOARD_SHEET_TITLE,
-            gridProperties: {
-              rowCount: 80,
-              columnCount: 8,
-              frozenRowCount: 3,
-            },
-            tabColorStyle: {
-              rgbColor: { red: 0.18, green: 0.41, blue: 0.73 },
+    for (const title of Object.values(SHEETS)) {
+      if (!byTitle.has(title)) {
+        requests.push({
+          addSheet: {
+            properties: {
+              title,
+              gridProperties: {
+                rowCount: title === SHEETS.dashboard ? 80 : 1000,
+                columnCount:
+                  title === SHEETS.dashboard ? 8 : title === SHEETS.settings ? 3 : 14,
+                frozenRowCount: title === SHEETS.dashboard ? 3 : 1,
+              },
             },
           },
-        },
-      });
+        });
+      }
     }
 
     if (requests.length > 0) {
@@ -154,79 +283,94 @@ class GoogleSheetsService {
     }
 
     await this.ensureBugHeaders();
-    await this.ensureDashboard();
+    await this.ensureSettingsSheet();
+    await this.ensureModeratorsSheet();
+    await this.refreshDashboard();
     await this.applyFormatting();
   }
 
   async ensureBugHeaders() {
     await this.sheetsApi.spreadsheets.values.update({
       spreadsheetId: this.spreadsheetId,
-      range: `${BUGS_SHEET_TITLE}!A1:R1`,
+      range: `${SHEETS.bugs}!A1:N1`,
       valueInputOption: "RAW",
       requestBody: { values: [BUG_HEADERS] },
     });
   }
 
-  async ensureDashboard() {
-    const bugsRef = escapeSheetTitle(BUGS_SHEET_TITLE);
-    const values = [
-      ["Bug Report Dashboard", "", "", "", "", "", "", ""],
-      ["Последнее обновление", new Date().toISOString(), "", "", "", "", "", ""],
-      ["", "", "", "", "", "", "", ""],
-      ["Общее количество", `=COUNTA(${bugsRef}!A2:A)`],
-      ["Активные", `=COUNTIF(${bugsRef}!D2:D,"triage")`],
-      ["Новые", `=COUNTIF(${bugsRef}!D2:D,"new")`],
-      ["Отклоненные", `=COUNTIF(${bugsRef}!D2:D,"rejected")`],
-      ["Дубликаты", `=COUNTIF(${bugsRef}!D2:D,"duplicate")`],
-      ["", "", "", "", "", "", "", ""],
-      ["Статусы", "Количество", "", "Приоритеты", "Количество", "", "Разделы", "Количество"],
-      ["new", `=COUNTIF(${bugsRef}!D2:D,"new")`, "", "very_high", `=COUNTIF(${bugsRef}!F2:F,"very_high")`, "", "Касса", `=COUNTIF(${bugsRef}!G2:G,"Касса")`],
-      ["triage", `=COUNTIF(${bugsRef}!D2:D,"triage")`, "", "high", `=COUNTIF(${bugsRef}!F2:F,"high")`, "", "Склад", `=COUNTIF(${bugsRef}!G2:G,"Склад")`],
-      ["rejected", `=COUNTIF(${bugsRef}!D2:D,"rejected")`, "", "medium", `=COUNTIF(${bugsRef}!F2:F,"medium")`, "", "ЛИС", `=COUNTIF(${bugsRef}!G2:G,"ЛИС")`],
-      ["duplicate", `=COUNTIF(${bugsRef}!D2:D,"duplicate")`, "", "low", `=COUNTIF(${bugsRef}!F2:F,"low")`, "", "Другие", `=COUNTA(${bugsRef}!G2:G)-COUNTIF(${bugsRef}!G2:G,"Касса")-COUNTIF(${bugsRef}!G2:G,"Склад")-COUNTIF(${bugsRef}!G2:G,"ЛИС")`],
-      ["", "", "", "", "", "", "", ""],
-      ["Последние 10 багов", "", "", "", "", "", "", ""],
-      [
-        `=ARRAYFORMULA(IFERROR(QUERY({${bugsRef}!A2:A,${bugsRef}!D2:D,${bugsRef}!E2:E,${bugsRef}!F2:F,${bugsRef}!G2:G,${bugsRef}!B2:B},"select Col1,Col2,Col3,Col4,Col5,Col6 where Col1 is not null order by Col6 desc limit 10",0), ""))`,
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-      ],
-    ];
-
+  async ensureSettingsSheet() {
     await this.sheetsApi.spreadsheets.values.update({
       spreadsheetId: this.spreadsheetId,
-      range: `${DASHBOARD_SHEET_TITLE}!A1:H25`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values },
+      range: `${SHEETS.settings}!A1:C1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [SETTINGS_HEADERS] },
     });
+
+    const existing = await this.sheetsApi.spreadsheets.values.get({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.settings}!A2:C100`,
+    });
+
+    const rows = existing.data.values || [];
+    const hasChannelSetting = rows.some((row) => row[0] === "slack_bug_channel_id");
+
+    if (!hasChannelSetting) {
+      await this.sheetsApi.spreadsheets.values.append({
+        spreadsheetId: this.spreadsheetId,
+        range: `${SHEETS.settings}!A:C`,
+        valueInputOption: "RAW",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: {
+          values: [[
+            "slack_bug_channel_id",
+            config.slackBugChannelId || "",
+            "Канал Slack, куда бот публикует баги и отчеты",
+          ]],
+        },
+      });
+    }
+  }
+
+  async ensureModeratorsSheet() {
+    await this.sheetsApi.spreadsheets.values.update({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.moderators}!A1:C1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [MODERATOR_HEADERS] },
+    });
+
+    const existing = await this.sheetsApi.spreadsheets.values.get({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.moderators}!A2:C100`,
+    });
+
+    const rows = existing.data.values || [];
+    const existingIds = new Set(rows.map((row) => row[0]).filter(Boolean));
+    const rowsToAdd = config.slackModeratorIds
+      .filter((id) => !existingIds.has(id))
+      .map((id) => [id, "Основной модератор", "TRUE"]);
+
+    if (rowsToAdd.length > 0) {
+      await this.sheetsApi.spreadsheets.values.append({
+        spreadsheetId: this.spreadsheetId,
+        range: `${SHEETS.moderators}!A:C`,
+        valueInputOption: "RAW",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: { values: rowsToAdd },
+      });
+    }
   }
 
   async applyFormatting() {
-    const bugsSheetId = this.sheetIds[BUGS_SHEET_TITLE];
-    const dashboardSheetId = this.sheetIds[DASHBOARD_SHEET_TITLE];
-
     const requests = [
       {
         repeatCell: {
-          range: {
-            sheetId: bugsSheetId,
-            startRowIndex: 0,
-            endRowIndex: 1,
-          },
+          range: { sheetId: this.sheetIds[SHEETS.bugs], startRowIndex: 0, endRowIndex: 1 },
           cell: {
             userEnteredFormat: {
-              backgroundColorStyle: {
-                rgbColor: { red: 0.11, green: 0.56, blue: 0.48 },
-              },
+              backgroundColorStyle: { rgbColor: { red: 0.1, green: 0.56, blue: 0.48 } },
               textFormat: {
-                foregroundColorStyle: {
-                  rgbColor: { red: 1, green: 1, blue: 1 },
-                },
+                foregroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } },
                 bold: true,
               },
               horizontalAlignment: "CENTER",
@@ -236,39 +380,15 @@ class GoogleSheetsService {
         },
       },
       {
-        updateDimensionProperties: {
-          range: {
-            sheetId: bugsSheetId,
-            dimension: "COLUMNS",
-            startIndex: 0,
-            endIndex: BUG_HEADERS.length,
-          },
-          properties: {
-            pixelSize: 160,
-          },
-          fields: "pixelSize",
-        },
-      },
-      {
         repeatCell: {
-          range: {
-            sheetId: dashboardSheetId,
-            startRowIndex: 0,
-            endRowIndex: 1,
-            startColumnIndex: 0,
-            endColumnIndex: 8,
-          },
+          range: { sheetId: this.sheetIds[SHEETS.dashboard], startRowIndex: 0, endRowIndex: 1 },
           cell: {
             userEnteredFormat: {
-              backgroundColorStyle: {
-                rgbColor: { red: 0.18, green: 0.41, blue: 0.73 },
-              },
+              backgroundColorStyle: { rgbColor: { red: 0.18, green: 0.41, blue: 0.73 } },
               textFormat: {
-                foregroundColorStyle: {
-                  rgbColor: { red: 1, green: 1, blue: 1 },
-                },
+                foregroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } },
+                bold: true,
                 fontSize: 16,
-                bold: true,
               },
             },
           },
@@ -277,21 +397,11 @@ class GoogleSheetsService {
       },
       {
         repeatCell: {
-          range: {
-            sheetId: dashboardSheetId,
-            startRowIndex: 3,
-            endRowIndex: 8,
-            startColumnIndex: 0,
-            endColumnIndex: 2,
-          },
+          range: { sheetId: this.sheetIds[SHEETS.settings], startRowIndex: 0, endRowIndex: 1 },
           cell: {
             userEnteredFormat: {
-              backgroundColorStyle: {
-                rgbColor: { red: 0.93, green: 0.97, blue: 1 },
-              },
-              textFormat: {
-                bold: true,
-              },
+              backgroundColorStyle: { rgbColor: { red: 0.98, green: 0.89, blue: 0.7 } },
+              textFormat: { bold: true },
             },
           },
           fields: "userEnteredFormat(backgroundColorStyle,textFormat)",
@@ -299,21 +409,11 @@ class GoogleSheetsService {
       },
       {
         repeatCell: {
-          range: {
-            sheetId: dashboardSheetId,
-            startRowIndex: 9,
-            endRowIndex: 14,
-            startColumnIndex: 0,
-            endColumnIndex: 8,
-          },
+          range: { sheetId: this.sheetIds[SHEETS.moderators], startRowIndex: 0, endRowIndex: 1 },
           cell: {
             userEnteredFormat: {
-              backgroundColorStyle: {
-                rgbColor: { red: 0.95, green: 0.95, blue: 0.95 },
-              },
-              textFormat: {
-                bold: true,
-              },
+              backgroundColorStyle: { rgbColor: { red: 0.89, green: 0.95, blue: 0.89 } },
+              textFormat: { bold: true },
             },
           },
           fields: "userEnteredFormat(backgroundColorStyle,textFormat)",
@@ -322,27 +422,13 @@ class GoogleSheetsService {
       {
         mergeCells: {
           range: {
-            sheetId: dashboardSheetId,
+            sheetId: this.sheetIds[SHEETS.dashboard],
             startRowIndex: 0,
             endRowIndex: 1,
             startColumnIndex: 0,
             endColumnIndex: 8,
           },
           mergeType: "MERGE_ALL",
-        },
-      },
-      {
-        updateDimensionProperties: {
-          range: {
-            sheetId: dashboardSheetId,
-            dimension: "COLUMNS",
-            startIndex: 0,
-            endIndex: 8,
-          },
-          properties: {
-            pixelSize: 150,
-          },
-          fields: "pixelSize",
         },
       },
     ];
@@ -353,8 +439,31 @@ class GoogleSheetsService {
         requestBody: { requests },
       });
     } catch (_error) {
-      // Ignore merge/formatting conflicts if the layout already exists.
+      // Safe to ignore when formatting is already present.
     }
+  }
+
+  async getBugRows() {
+    const response = await this.sheetsApi.spreadsheets.values.get({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.bugs}!A2:N`,
+    });
+
+    return rowsToBugEntries(response.data.values || []);
+  }
+
+  async refreshDashboard() {
+    if (!this.enabled) {
+      return;
+    }
+
+    const entries = await this.getBugRows();
+    await this.sheetsApi.spreadsheets.values.update({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.dashboard}!A1:H40`,
+      valueInputOption: "RAW",
+      requestBody: { values: buildDashboardValues(entries) },
+    });
   }
 
   async getNextSequence() {
@@ -366,7 +475,7 @@ class GoogleSheetsService {
 
     const response = await this.sheetsApi.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
-      range: `${BUGS_SHEET_TITLE}!A2:A`,
+      range: `${SHEETS.bugs}!A2:A`,
     });
 
     const rows = response.data.values || [];
@@ -385,7 +494,7 @@ class GoogleSheetsService {
   async findBugRow(bugId) {
     const response = await this.sheetsApi.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
-      range: `${BUGS_SHEET_TITLE}!A2:A`,
+      range: `${SHEETS.bugs}!A2:A`,
     });
 
     const rows = response.data.values || [];
@@ -406,26 +515,100 @@ class GoogleSheetsService {
     if (existingRow) {
       await this.sheetsApi.spreadsheets.values.update({
         spreadsheetId: this.spreadsheetId,
-        range: `${BUGS_SHEET_TITLE}!A${existingRow}:R${existingRow}`,
+        range: `${SHEETS.bugs}!A${existingRow}:N${existingRow}`,
         valueInputOption: "RAW",
         requestBody: { values: [row] },
       });
     } else {
       await this.sheetsApi.spreadsheets.values.append({
         spreadsheetId: this.spreadsheetId,
-        range: `${BUGS_SHEET_TITLE}!A:R`,
+        range: `${SHEETS.bugs}!A:N`,
         valueInputOption: "RAW",
         insertDataOption: "INSERT_ROWS",
         requestBody: { values: [row] },
       });
     }
 
-    await this.sheetsApi.spreadsheets.values.update({
+    await this.refreshDashboard();
+  }
+
+  async getRuntimeConfig() {
+    await this.initialize();
+
+    const settingsResponse = await this.sheetsApi.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
-      range: `${DASHBOARD_SHEET_TITLE}!B2`,
-      valueInputOption: "RAW",
-      requestBody: { values: [[new Date().toISOString()]] },
+      range: `${SHEETS.settings}!A2:C100`,
     });
+    const moderatorResponse = await this.sheetsApi.spreadsheets.values.get({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.moderators}!A2:C100`,
+    });
+
+    const settingsMap = new Map(
+      (settingsResponse.data.values || [])
+        .filter((row) => row[0])
+        .map((row) => [row[0], row[1] || ""])
+    );
+
+    const moderatorIds = (moderatorResponse.data.values || [])
+      .filter((row) => row[0] && normalizeBoolean(row[2]))
+      .map((row) => row[0]);
+
+    return {
+      channelId: settingsMap.get("slack_bug_channel_id") || config.slackBugChannelId,
+      moderatorIds: moderatorIds.length > 0 ? moderatorIds : config.slackModeratorIds,
+    };
+  }
+
+  async buildReportSummary({ startDate = null, endDate = null } = {}) {
+    await this.initialize();
+    const entries = await this.getBugRows();
+    const filtered = entries.filter((entry) => {
+      const createdAt = parseDisplayDate(entry.createdAt);
+      if (!createdAt) {
+        return false;
+      }
+      if (startDate && createdAt < startDate) {
+        return false;
+      }
+      if (endDate && createdAt > endDate) {
+        return false;
+      }
+      return true;
+    });
+
+    const countBy = (field, value) => filtered.filter((entry) => entry[field] === value).length;
+    const sections = new Map();
+    for (const entry of filtered) {
+      const section = entry.section || "Не указан";
+      sections.set(section, (sections.get(section) || 0) + 1);
+    }
+
+    const topSections = Array.from(sections.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, count]) => `• ${name}: ${count}`)
+      .join("\n");
+
+    const periodLabel =
+      startDate && endDate
+        ? `${formatDisplayDate(startDate)} — ${formatDisplayDate(endDate)}`
+        : "за все время";
+
+    return [
+      `*Отчет по багам*`,
+      `Период: ${periodLabel}`,
+      `Всего: ${filtered.length}`,
+      `Новые: ${countBy("status", "Новый")}`,
+      `В работе: ${countBy("status", "В работе")}`,
+      `Отклоненные: ${countBy("status", "Отклонен")}`,
+      `Дубликаты: ${countBy("status", "Дубликат")}`,
+      `Очень высокий приоритет: ${countBy("priority", "Очень высокий")}`,
+      `Высокий приоритет: ${countBy("priority", "Высокий")}`,
+      `Средний приоритет: ${countBy("priority", "Средний")}`,
+      `Низкий приоритет: ${countBy("priority", "Низкий")}`,
+      topSections ? `Топ разделов:\n${topSections}` : "Топ разделов: нет данных",
+    ].join("\n");
   }
 }
 

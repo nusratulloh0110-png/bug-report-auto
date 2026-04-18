@@ -23,6 +23,18 @@ function formatMultiline(text) {
   return text ? text.replace(/\n/g, "\n> ") : "—";
 }
 
+function formatDisplayDate(dateValue) {
+  return new Date(dateValue).toLocaleString("ru-RU", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
 export function buildBugBlocks(bug) {
   const jiraText = bug.jiraKey
     ? bug.jiraUrl
@@ -36,17 +48,17 @@ export function buildBugBlocks(bug) {
   const blocks = [
     {
       type: "header",
-      text: plainText(`#${bug.bugId} Bug Report`),
+      text: plainText(`#${bug.bugId} Баг-репорт`),
     },
     {
       type: "section",
       fields: [
         { type: "mrkdwn", text: `*Статус:*\n${STATUS_LABELS[bug.status] || bug.status}` },
         { type: "mrkdwn", text: `*Приоритет:*\n${PRIORITY_LABELS[bug.priority] || bug.priority}` },
-        { type: "mrkdwn", text: `*Автор:*\n<@${bug.reporterId}>` },
+        { type: "mrkdwn", text: `*Репортер:*\n<@${bug.reporterId}>` },
         { type: "mrkdwn", text: `*Айди клиники:*\n${bug.clinicId}` },
         { type: "mrkdwn", text: `*Раздел:*\n${bug.section}` },
-        { type: "mrkdwn", text: `*Jira:*\n${jiraText}` },
+        { type: "mrkdwn", text: `*Связь с Jira:*\n${jiraText}` },
         { type: "mrkdwn", text: `*Дубликат:*\n${duplicateText}` },
       ],
     },
@@ -69,7 +81,7 @@ export function buildBugBlocks(bug) {
       elements: [
         {
           type: "mrkdwn",
-          text: `Создан: ${new Date(bug.createdAt).toLocaleString("ru-RU")}`,
+          text: `Создан: ${formatDisplayDate(bug.createdAt)}`,
         },
         {
           type: "mrkdwn",
@@ -120,14 +132,14 @@ export function buildLauncherBlocks() {
   return [
     {
       type: "header",
-      text: plainText("Bug Report Center"),
+      text: plainText("Центр баг-репортов"),
     },
     {
       type: "section",
       text: {
         type: "mrkdwn",
         text:
-          "*Bug intake*\nНажмите `Report Bug`, чтобы открыть форму, заполнить данные по багу и затем при необходимости приложить файлы в тред.",
+          "*Подача бага*\nНажмите кнопку ниже, чтобы открыть форму, заполнить данные по багу и затем при необходимости приложить файлы в тред.",
       },
     },
     {
@@ -136,7 +148,7 @@ export function buildLauncherBlocks() {
         {
           type: "button",
           action_id: ACTIONS.OPEN_BUG_MODAL,
-          text: plainText("Report Bug"),
+          text: plainText("Сообщить о баге"),
           style: "primary",
           value: encodeActionValue({ source: "launcher" }),
         },

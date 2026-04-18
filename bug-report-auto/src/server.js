@@ -24,6 +24,16 @@ app.post("/internal/publish-launcher", async (_request, reply) => {
   return reply.send({ ok: true });
 });
 
+app.post("/internal/post-weekly-report", async (_request, reply) => {
+  await slackService.postPeriodicReport("weekly");
+  return reply.send({ ok: true });
+});
+
+app.post("/internal/post-monthly-report", async (_request, reply) => {
+  await slackService.postPeriodicReport("monthly");
+  return reply.send({ ok: true });
+});
+
 app.post("/slack/commands", async (request, reply) => {
   const rawBody = request.rawBody || "";
 
