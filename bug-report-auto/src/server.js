@@ -1,0 +1,81 @@
+import Fastify from "fastify";
+import { config } from "./config.js";
+import { slackService } from "./slack/service.js";
+
+const app = Fastify({
+  logger: true,
+});
+
+app.addContentTypeParser(
+  "application/x-www-form-urlencoded",
+  { parseAs: "string" },
+  (request, body, done) => {
+    request.rawBody = body;
+    done(null, Object.fromEntries(new URLSearchParams(body)));
+  }
+);
+
+app.get("/health", async () => {
+  return { ok: true };
+});
+
+app.post("/internal/publish-launcher", async (_request, reply) => {
+  await slackService.postLauncherMessage();
+  return reply.send({ ok: true });
+});
+
+app.post("/slack/commands", async (request, reply) => {
+  const rawBody = request.rawBody || "";
+
+  if (!slackService.validateSlackRequest(rawBody, request.headers)) {
+    return reply.code(401).send({ ok: false, error: "Invalid Slack signature" });
+  }
+
+  const response = await slackService.handleSlashCommand(request.body);
+  return reply.send(response);
+});
+
+app.post("/slack/interactions", async (request, reply) => {
+  const rawBody = request.rawBody || "";
+
+  if (!slackService.validateSlackRequest(rawBody, request.headers)) {
+    return reply.code(401).send({ ok: false, error: "Invalid Slack signature" });
+  }
+
+  const payload = JSON.parse(request.body.payload);
+  const response = await slackService.handleInteraction(payload);
+  return reply.send(response);
+});
+
+app.setErrorHandler((error, _request, reply) => {
+  requestSafeLog(app, error);
+
+  if (error.statusCode === 403) {
+    return reply.code(200).send({
+      response_type: "ephemeral",
+      text: "Это действие доступно только модераторам.",
+    });
+  }
+
+  return reply.code(error.statusCode || 500).send({
+    ok: false,
+    error: error.message || "Internal Server Error",
+  });
+});
+
+function requestSafeLog(instance, error) {
+  instance.log.error(
+    {
+      message: error.message,
+      stack: error.stack,
+    },
+    "Unhandled application error"
+  );
+}
+
+const address = await app.listen({
+  port: config.port,
+  host: "0.0.0.0",
+});
+
+app.log.info(`Server listening on ${address}`);
