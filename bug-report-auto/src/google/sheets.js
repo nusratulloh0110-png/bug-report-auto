@@ -709,27 +709,35 @@ class GoogleSheetsService {
           },
         },
       },
-      {
-        mergeCells: {
-          range: {
-            sheetId: this.sheetIds[SHEETS.dashboard],
-            startRowIndex: 0,
-            endRowIndex: 1,
-            startColumnIndex: 0,
-            endColumnIndex: 8,
-          },
-          mergeType: "MERGE_ALL",
-        },
-      },
     ];
+
+    await this.sheetsApi.spreadsheets.batchUpdate({
+      spreadsheetId: this.spreadsheetId,
+      requestBody: { requests },
+    });
 
     try {
       await this.sheetsApi.spreadsheets.batchUpdate({
         spreadsheetId: this.spreadsheetId,
-        requestBody: { requests },
+        requestBody: {
+          requests: [
+            {
+              mergeCells: {
+                range: {
+                  sheetId: this.sheetIds[SHEETS.dashboard],
+                  startRowIndex: 0,
+                  endRowIndex: 1,
+                  startColumnIndex: 0,
+                  endColumnIndex: 8,
+                },
+                mergeType: "MERGE_ALL",
+              },
+            },
+          ],
+        },
       });
     } catch (_error) {
-      // Safe to ignore when formatting is already present.
+      // Ignore only the repeated merge conflict.
     }
   }
 
