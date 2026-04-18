@@ -76,6 +76,14 @@ function normalizeBugFromSubmission(view, user) {
   };
 }
 
+function moderatorPatch(user, extra = {}) {
+  return {
+    assignedModeratorId: user.id,
+    assignedModeratorName: user.username || user.name || user.id,
+    ...extra,
+  };
+}
+
 async function publishBugCard(bug, channelId) {
   const response = await slackClient.chat.postMessage({
     channel: channelId,
@@ -284,7 +292,10 @@ export const slackService = {
       const reason = extractPlainTextValue(payload.view.state, "reason_block", "reason_input");
       await updateBugStatusFromAction(
         bug.bugId,
-        { status: "rejected", rejectionReason: reason },
+        moderatorPatch(payload.user, {
+          status: "rejected",
+          rejectionReason: reason,
+        }),
         mentionReporter(bug, `баг *#${bug.bugId}* отклонен. Причина: ${reason}`)
       );
       return { response_action: "clear" };
@@ -309,7 +320,10 @@ export const slackService = {
 
       await updateBugStatusFromAction(
         bug.bugId,
-        { status: "duplicate", duplicateOf: masterBugId },
+        moderatorPatch(payload.user, {
+          status: "duplicate",
+          duplicateOf: masterBugId,
+        }),
         mentionReporter(bug, `баг *#${bug.bugId}* помечен как дубликат *#${masterBugId}*.`)
       );
       return { response_action: "clear" };
@@ -320,7 +334,10 @@ export const slackService = {
       const jiraUrl = extractPlainTextValue(payload.view.state, "jira_url_block", "jira_url_input");
       await updateBugStatusFromAction(
         bug.bugId,
-        { jiraKey, jiraUrl: jiraUrl || null },
+        moderatorPatch(payload.user, {
+          jiraKey,
+          jiraUrl: jiraUrl || null,
+        }),
         `Для бага *#${bug.bugId}* сохранена связь с Jira: ${jiraKey}`
       );
       return { response_action: "clear" };
@@ -357,11 +374,9 @@ export const slackService = {
     if (action.action_id === ACTIONS.TAKE_IN_WORK) {
       await updateBugStatusFromAction(
         bug.bugId,
-        {
+        moderatorPatch(payload.user, {
           status: "triage",
-          assignedModeratorId: payload.user.id,
-          assignedModeratorName: payload.user.username || payload.user.name || payload.user.id,
-        },
+        }),
         mentionReporter(
           bug,
           `баг *#${bug.bugId}* взят в работу модератором <@${payload.user.id}>.`
@@ -376,10 +391,10 @@ export const slackService = {
     if (action.action_id === ACTIONS.MARK_FIXED) {
       await updateBugStatusFromAction(
         bug.bugId,
-        {
+        moderatorPatch(payload.user, {
           status: "fixed",
           fixedAt: new Date().toISOString(),
-        },
+        }),
         mentionReporter(bug, `баг *#${bug.bugId}* исправлен.`)
       );
       return {
@@ -440,6 +455,11 @@ export const slackService = {
       endDate: now,
     });
 
+    await this.postTextToRuntimeChannel(text);
+  },
+
+  async postTextToRuntimeChannel(text) {
+    await this.refreshRuntimeConfig();
     await slackClient.chat.postMessage({
       channel: this.runtimeConfig.channelId,
       text,
@@ -498,5 +518,6 @@ function buildInMemoryReportSummary(bugs, range) {
     `В работе: ${countBy("status", "triage")}`,
     `Отклоненные: ${countBy("status", "rejected")}`,
     `Дубликаты: ${countBy("status", "duplicate")}`,
+    `Исправленные: ${countBy("status", "fixed")}`,
   ].join("\n");
 }

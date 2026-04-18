@@ -36,6 +36,7 @@ const STATUS_LABELS = {
   triage: "В работе",
   rejected: "Отклонен",
   duplicate: "Дубликат",
+  fixed: "Исправлено",
 };
 
 const PRIORITY_LABELS = {
@@ -175,6 +176,7 @@ function buildDashboardValues(entries) {
     ["В работе", entries.filter((entry) => entry.status === "В работе").length, "", "", "", "", "", ""],
     ["Отклоненные", entries.filter((entry) => entry.status === "Отклонен").length, "", "", "", "", "", ""],
     ["Дубликаты", entries.filter((entry) => entry.status === "Дубликат").length, "", "", "", "", "", ""],
+    ["Исправленные", entries.filter((entry) => entry.status === "Исправлено").length, "", "", "", "", "", ""],
     ["", "", "", "", "", "", "", ""],
     ["Статусы", "Количество", "", "Приоритеты", "Количество", "", "Разделы", "Количество"],
     ["Новый", entries.filter((entry) => entry.status === "Новый").length, "", "Очень высокий", entries.filter((entry) => entry.priority === "Очень высокий").length, "", topSections[0][0], topSections[0][1]],
@@ -257,14 +259,21 @@ class GoogleSheetsService {
 
     for (const title of Object.values(SHEETS)) {
       if (!byTitle.has(title)) {
+        const columnCount =
+          title === SHEETS.dashboard
+            ? 8
+            : title === SHEETS.settings
+              ? 3
+              : title === SHEETS.moderators
+                ? 3
+                : BUG_HEADERS.length;
         requests.push({
           addSheet: {
             properties: {
               title,
               gridProperties: {
                 rowCount: title === SHEETS.dashboard ? 80 : 1000,
-                columnCount:
-                  title === SHEETS.dashboard ? 8 : title === SHEETS.settings ? 3 : 14,
+                columnCount,
                 frozenRowCount: title === SHEETS.dashboard ? 3 : 1,
               },
             },
@@ -318,20 +327,57 @@ class GoogleSheetsService {
     });
 
     const rows = existing.data.values || [];
-    const hasChannelSetting = rows.some((row) => row[0] === "slack_bug_channel_id");
+    const existingKeys = new Set(rows.map((row) => row[0]).filter(Boolean));
+    const rowsToAdd = [];
 
-    if (!hasChannelSetting) {
+    if (!existingKeys.has("slack_bug_channel_id")) {
+      rowsToAdd.push([
+        "slack_bug_channel_id",
+        config.slackBugChannelId || "",
+        "Канал Slack, куда бот публикует баги и отчеты",
+      ]);
+    }
+
+    if (!existingKeys.has("weekly_report_enabled")) {
+      rowsToAdd.push([
+        "weekly_report_enabled",
+        "TRUE",
+        "Отправлять еженедельный отчет автоматически",
+      ]);
+    }
+
+    if (!existingKeys.has("weekly_report_time")) {
+      rowsToAdd.push([
+        "weekly_report_time",
+        "09:00",
+        "Время отправки еженедельного отчета",
+      ]);
+    }
+
+    if (!existingKeys.has("weekly_report_timezone")) {
+      rowsToAdd.push([
+        "weekly_report_timezone",
+        config.reportTimezone,
+        "Таймзона для автоматического еженедельного отчета",
+      ]);
+    }
+
+    if (!existingKeys.has("last_weekly_report_at")) {
+      rowsToAdd.push([
+        "last_weekly_report_at",
+        "",
+        "Служебное поле: когда еженедельный отчет был отправлен в последний раз",
+      ]);
+    }
+
+    if (rowsToAdd.length > 0) {
       await this.sheetsApi.spreadsheets.values.append({
         spreadsheetId: this.spreadsheetId,
         range: `${SHEETS.settings}!A:C`,
         valueInputOption: "RAW",
         insertDataOption: "INSERT_ROWS",
         requestBody: {
-          values: [[
-            "slack_bug_channel_id",
-            config.slackBugChannelId || "",
-            "Канал Slack, куда бот публикует баги и отчеты",
-          ]],
+          values: rowsToAdd,
         },
       });
     }
@@ -368,6 +414,8 @@ class GoogleSheetsService {
   }
 
   async applyFormatting() {
+    await this.resetBugConditionalFormatting();
+
     const requests = [
       {
         repeatCell: {
@@ -426,6 +474,110 @@ class GoogleSheetsService {
         },
       },
       {
+        addConditionalFormatRule: {
+          index: 0,
+          rule: {
+            ranges: [
+              {
+                sheetId: this.sheetIds[SHEETS.bugs],
+                startRowIndex: 1,
+                startColumnIndex: 0,
+                endColumnIndex: BUG_HEADERS.length,
+              },
+            ],
+            booleanRule: {
+              condition: {
+                type: "CUSTOM_FORMULA",
+                values: [{ userEnteredValue: "=$D2=\"В работе\"" }],
+              },
+              format: {
+                backgroundColorStyle: {
+                  rgbColor: { red: 1, green: 0.96, blue: 0.74 },
+                },
+              },
+            },
+          },
+        },
+      },
+      {
+        addConditionalFormatRule: {
+          index: 1,
+          rule: {
+            ranges: [
+              {
+                sheetId: this.sheetIds[SHEETS.bugs],
+                startRowIndex: 1,
+                startColumnIndex: 0,
+                endColumnIndex: BUG_HEADERS.length,
+              },
+            ],
+            booleanRule: {
+              condition: {
+                type: "CUSTOM_FORMULA",
+                values: [{ userEnteredValue: "=$D2=\"Дубликат\"" }],
+              },
+              format: {
+                backgroundColorStyle: {
+                  rgbColor: { red: 1, green: 1, blue: 1 },
+                },
+              },
+            },
+          },
+        },
+      },
+      {
+        addConditionalFormatRule: {
+          index: 2,
+          rule: {
+            ranges: [
+              {
+                sheetId: this.sheetIds[SHEETS.bugs],
+                startRowIndex: 1,
+                startColumnIndex: 0,
+                endColumnIndex: BUG_HEADERS.length,
+              },
+            ],
+            booleanRule: {
+              condition: {
+                type: "CUSTOM_FORMULA",
+                values: [{ userEnteredValue: "=$D2=\"Отклонен\"" }],
+              },
+              format: {
+                backgroundColorStyle: {
+                  rgbColor: { red: 0.98, green: 0.84, blue: 0.84 },
+                },
+              },
+            },
+          },
+        },
+      },
+      {
+        addConditionalFormatRule: {
+          index: 3,
+          rule: {
+            ranges: [
+              {
+                sheetId: this.sheetIds[SHEETS.bugs],
+                startRowIndex: 1,
+                startColumnIndex: 0,
+                endColumnIndex: BUG_HEADERS.length,
+              },
+            ],
+            booleanRule: {
+              condition: {
+                type: "CUSTOM_FORMULA",
+                values: [{ userEnteredValue: "=$D2=\"Исправлено\"" }],
+              },
+              format: {
+                backgroundColorStyle: {
+                  rgbColor: { red: 0.85, green: 0.94, blue: 0.85 },
+                },
+              },
+            },
+          },
+        },
+      },
+      {
         mergeCells: {
           range: {
             sheetId: this.sheetIds[SHEETS.dashboard],
@@ -447,6 +599,37 @@ class GoogleSheetsService {
     } catch (_error) {
       // Safe to ignore when formatting is already present.
     }
+  }
+
+  async resetBugConditionalFormatting() {
+    const spreadsheet = await this.sheetsApi.spreadsheets.get({
+      spreadsheetId: this.spreadsheetId,
+      fields: "sheets(properties(sheetId,title),conditionalFormats)",
+    });
+
+    const bugSheet = (spreadsheet.data.sheets || []).find(
+      (sheet) => sheet.properties?.sheetId === this.sheetIds[SHEETS.bugs]
+    );
+
+    const ruleCount = bugSheet?.conditionalFormats?.length || 0;
+    if (ruleCount === 0) {
+      return;
+    }
+
+    const requests = [];
+    for (let index = ruleCount - 1; index >= 0; index -= 1) {
+      requests.push({
+        deleteConditionalFormatRule: {
+          sheetId: this.sheetIds[SHEETS.bugs],
+          index,
+        },
+      });
+    }
+
+    await this.sheetsApi.spreadsheets.batchUpdate({
+      spreadsheetId: this.spreadsheetId,
+      requestBody: { requests },
+    });
   }
 
   async getBugRows() {
@@ -563,7 +746,42 @@ class GoogleSheetsService {
     return {
       channelId: settingsMap.get("slack_bug_channel_id") || config.slackBugChannelId,
       moderatorIds: moderatorIds.length > 0 ? moderatorIds : config.slackModeratorIds,
+      weeklyReportEnabled: normalizeBoolean(settingsMap.get("weekly_report_enabled")),
+      weeklyReportTime: settingsMap.get("weekly_report_time") || "09:00",
+      weeklyReportTimezone: settingsMap.get("weekly_report_timezone") || config.reportTimezone,
+      lastWeeklyReportAt: settingsMap.get("last_weekly_report_at") || "",
     };
+  }
+
+  async upsertSetting(key, value) {
+    await this.initialize();
+
+    const response = await this.sheetsApi.spreadsheets.values.get({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.settings}!A2:C100`,
+    });
+
+    const rows = response.data.values || [];
+    const rowIndex = rows.findIndex((row) => row[0] === key);
+
+    if (rowIndex >= 0) {
+      const actualRow = rowIndex + 2;
+      await this.sheetsApi.spreadsheets.values.update({
+        spreadsheetId: this.spreadsheetId,
+        range: `${SHEETS.settings}!B${actualRow}`,
+        valueInputOption: "RAW",
+        requestBody: { values: [[value]] },
+      });
+      return;
+    }
+
+    await this.sheetsApi.spreadsheets.values.append({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.settings}!A:C`,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values: [[key, value, "Добавлено автоматически"]] },
+    });
   }
 
   async buildReportSummary({ startDate = null, endDate = null } = {}) {
@@ -609,6 +827,7 @@ class GoogleSheetsService {
       `В работе: ${countBy("status", "В работе")}`,
       `Отклоненные: ${countBy("status", "Отклонен")}`,
       `Дубликаты: ${countBy("status", "Дубликат")}`,
+      `Исправленные: ${countBy("status", "Исправлено")}`,
       `Очень высокий приоритет: ${countBy("priority", "Очень высокий")}`,
       `Высокий приоритет: ${countBy("priority", "Высокий")}`,
       `Средний приоритет: ${countBy("priority", "Средний")}`,

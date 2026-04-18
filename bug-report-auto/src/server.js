@@ -1,5 +1,7 @@
 import Fastify from "fastify";
 import { config } from "./config.js";
+import { googleSheetsService } from "./google/sheets.js";
+import { startWeeklyReportScheduler } from "./reports/scheduler.js";
 import { slackService } from "./slack/service.js";
 
 const app = Fastify({
@@ -84,6 +86,7 @@ function requestSafeLog(instance, error) {
 }
 
 await slackService.initialize();
+startWeeklyReportScheduler(slackService, googleSheetsService, app.log);
 
 const address = await app.listen({
   port: config.port,
