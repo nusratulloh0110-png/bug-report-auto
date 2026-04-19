@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+﻿import Fastify from "fastify";
 import { config } from "./config.js";
 import { googleSheetsService } from "./google/sheets.js";
 import { startWeeklyReportScheduler } from "./reports/scheduler.js";

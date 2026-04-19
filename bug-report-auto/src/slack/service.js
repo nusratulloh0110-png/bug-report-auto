@@ -1,4 +1,4 @@
-import crypto from "node:crypto";
+﻿import crypto from "node:crypto";
 import { config } from "../config.js";
 import { googleSheetsService } from "../google/sheets.js";
 import { bugStore } from "../store/bug-store.js";
@@ -598,6 +598,7 @@ function buildInMemoryReportSummary(bugs, range) {
   const countBy = (field, value) => filtered.filter((bug) => bug[field] === value).length;
   const productHeader = range.product ? [`Продукт: ${range.product}`] : [];
   return [
+    ...productHeader,
     `*Отчет по багам*`,
     `Всего: ${filtered.length}`,
     `Новые: ${countBy("status", "new")}`,
