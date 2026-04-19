@@ -31,4 +31,5 @@ export const config = {
   googlePrivateKey: process.env.GOOGLE_PRIVATE_KEY || "",
   googleProjectId: process.env.GOOGLE_PROJECT_ID || "",
   reportTimezone: process.env.REPORT_TIMEZONE || "Asia/Tashkent",
+  internalApiToken: process.env.INTERNAL_API_TOKEN || "",
 };

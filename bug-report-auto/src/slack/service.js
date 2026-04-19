@@ -146,6 +146,17 @@ async function openModal(triggerId, view) {
   });
 }
 
+async function warmLauncherStore() {
+  if (!googleSheetsService.enabled) {
+    return;
+  }
+
+  const persistedLauncher = await googleSheetsService.getPersistedLauncher();
+  if (persistedLauncher?.channelId && persistedLauncher?.messageTs) {
+    launcherStore.set(persistedLauncher.channelId, persistedLauncher);
+  }
+}
+
 async function publishOrUpdateLauncher(channelId) {
   const existing = launcherStore.get(channelId);
 
@@ -157,6 +168,10 @@ async function publishOrUpdateLauncher(channelId) {
         text: "Сообщить о баге",
         blocks: buildLauncherBlocks(),
       });
+
+      if (googleSheetsService.enabled) {
+        await googleSheetsService.persistLauncher(channelId, existing.messageTs);
+      }
 
       return existing;
     } catch (_error) {
@@ -170,10 +185,16 @@ async function publishOrUpdateLauncher(channelId) {
     blocks: buildLauncherBlocks(),
   });
 
-  return launcherStore.set(channelId, {
+  const launcher = launcherStore.set(channelId, {
     channelId,
     messageTs: response.ts,
   });
+
+  if (googleSheetsService.enabled) {
+    await googleSheetsService.persistLauncher(channelId, response.ts);
+  }
+
+  return launcher;
 }
 
 async function updateBugStatusFromAction(bugId, patch, threadMessage) {
@@ -207,6 +228,7 @@ export const slackService = {
     const nextSequence = await googleSheetsService.getNextSequence();
     bugStore.syncSequence(nextSequence);
     await this.refreshRuntimeConfig();
+    await warmLauncherStore();
   },
 
   async refreshRuntimeConfig() {
@@ -276,6 +298,7 @@ export const slackService = {
     if (callbackId === CALLBACKS.BUG_CREATE_MODAL) {
       runInBackground(async () => {
         await this.refreshRuntimeConfig();
+        await googleSheetsService.ensureFreshSequence(bugStore);
         const bug = bugStore.create(normalizeBugFromSubmission(payload.view, payload.user));
         const publishedBug = await publishBugCard(bug, this.runtimeConfig.channelId);
 
@@ -370,6 +393,12 @@ export const slackService = {
 
   async handleBlockActions(payload) {
     const action = payload.actions?.[0];
+    if (!action?.action_id) {
+      return {
+        response_type: "ephemeral",
+        text: "Не удалось обработать действие. Попробуйте еще раз.",
+      };
+    }
     
     if (action.action_id === ACTIONS.OPEN_BUG_MODAL) {
       await this.refreshRuntimeConfig();

@@ -140,7 +140,8 @@ function asSheetRow(bug) {
 }
 
 function normalizeBoolean(value) {
-  return String(value || "").trim().toLowerCase() !== "false";
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "y";
 }
 
 function rowsToBugEntries(rows) {
@@ -245,6 +246,7 @@ function buildDashboardValues(entries) {
     ["В работе", entries.filter((entry) => entry.status === "В работе").length, "", "Высокий", entries.filter((entry) => entry.priority === "Высокий").length, "", topProducts[1][0], topProducts[1][1]],
     ["Отклонен", entries.filter((entry) => entry.status === "Отклонен").length, "", "Средний", entries.filter((entry) => entry.priority === "Средний").length, "", topProducts[2][0], topProducts[2][1]],
     ["Дубликат", entries.filter((entry) => entry.status === "Дубликат").length, "", "Низкий", entries.filter((entry) => entry.priority === "Низкий").length, "", topProducts[3][0], topProducts[3][1]],
+    ["Исправлено", entries.filter((entry) => entry.status === "Исправлено").length, "", "", "", "", "", ""],
     ["", "", "", "", "", "", "", ""],
     ["Последние 10 багов", "", "", "", "", "", "", ""],
     ["ID бага", "Статус", "Клиника", "Приоритет", "Раздел", "Создан", "", ""],
@@ -439,6 +441,22 @@ class GoogleSheetsService {
       ]);
     }
 
+    if (!existingKeys.has("launcher_channel_id")) {
+      rowsToAdd.push([
+        "launcher_channel_id",
+        config.slackBugChannelId || "",
+        "Служебное поле: канал с launcher-сообщением",
+      ]);
+    }
+
+    if (!existingKeys.has("launcher_message_ts")) {
+      rowsToAdd.push([
+        "launcher_message_ts",
+        "",
+        "Служебное поле: TS launcher-сообщения в Slack",
+      ]);
+    }
+
     if (rowsToAdd.length > 0) {
       await this.sheetsApi.spreadsheets.values.append({
         spreadsheetId: this.spreadsheetId,
@@ -522,7 +540,11 @@ class GoogleSheetsService {
   }
 
   async applyFormatting() {
-    await this.resetBugConditionalFormatting();
+    try {
+      await this.resetBugConditionalFormatting();
+    } catch (error) {
+      console.error("Failed to reset conditional formatting", error);
+    }
 
     const requests = [
       {
@@ -703,10 +725,15 @@ class GoogleSheetsService {
       },
     ];
 
-    await this.sheetsApi.spreadsheets.batchUpdate({
-      spreadsheetId: this.spreadsheetId,
-      requestBody: { requests },
-    });
+    try {
+      await this.sheetsApi.spreadsheets.batchUpdate({
+        spreadsheetId: this.spreadsheetId,
+        requestBody: { requests },
+      });
+    } catch (error) {
+      console.error("Failed to apply sheet formatting", error);
+      return;
+    }
 
     try {
       await this.sheetsApi.spreadsheets.batchUpdate({
@@ -821,10 +848,30 @@ class GoogleSheetsService {
     return max + 1;
   }
 
+  async ensureFreshSequence(bugStore) {
+    if (!this.enabled) {
+      return;
+    }
+
+    const nextSequence = await this.getNextSequence();
+    bugStore.syncSequence(nextSequence);
+  }
+
   async findBugRow(bugId) {
     const response = await this.sheetsApi.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
       range: `${SHEETS.bugs}!A2:A`,
+    });
+
+    const rows = response.data.values || [];
+    const index = rows.findIndex(([value]) => value === bugId);
+    return index === -1 ? null : index + 2;
+  }
+
+  async findSystemRow(bugId) {
+    const response = await this.sheetsApi.spreadsheets.values.get({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.system}!A2:A`,
     });
 
     const rows = response.data.values || [];
@@ -841,20 +888,17 @@ class GoogleSheetsService {
 
     const row = asSheetRow(bug);
     const systemRow = asSystemRow(bug);
-    const existingRow = await this.findBugRow(bug.bugId);
+    const [existingBugRow, existingSystemRow] = await Promise.all([
+      this.findBugRow(bug.bugId),
+      this.findSystemRow(bug.bugId),
+    ]);
 
-    if (existingRow) {
+    if (existingBugRow) {
       await this.sheetsApi.spreadsheets.values.update({
         spreadsheetId: this.spreadsheetId,
-        range: `${SHEETS.bugs}!A${existingRow}:Q${existingRow}`,
+        range: `${SHEETS.bugs}!A${existingBugRow}:Q${existingBugRow}`,
         valueInputOption: "RAW",
         requestBody: { values: [row] },
-      });
-      await this.sheetsApi.spreadsheets.values.update({
-        spreadsheetId: this.spreadsheetId,
-        range: `${SHEETS.system}!A${existingRow}:N${existingRow}`,
-        valueInputOption: "RAW",
-        requestBody: { values: [systemRow] },
       });
     } else {
       await this.sheetsApi.spreadsheets.values.append({
@@ -864,6 +908,16 @@ class GoogleSheetsService {
         insertDataOption: "INSERT_ROWS",
         requestBody: { values: [row] },
       });
+    }
+
+    if (existingSystemRow) {
+      await this.sheetsApi.spreadsheets.values.update({
+        spreadsheetId: this.spreadsheetId,
+        range: `${SHEETS.system}!A${existingSystemRow}:N${existingSystemRow}`,
+        valueInputOption: "RAW",
+        requestBody: { values: [systemRow] },
+      });
+    } else {
       await this.sheetsApi.spreadsheets.values.append({
         spreadsheetId: this.spreadsheetId,
         range: `${SHEETS.system}!A:N`,
@@ -896,12 +950,15 @@ class GoogleSheetsService {
 
     const visibleEntries = rowsToBugEntries(visibleResponse.data.values || []);
     const systemEntries = rowsToSystemBugs(systemResponse.data.values || []);
+    const visibleById = new Map(visibleEntries.map((entry) => [entry.bugId, entry]));
     const systemById = new Map(systemEntries.map((entry) => [entry.bugId, entry]));
+    const allBugIds = new Set([...visibleById.keys(), ...systemById.keys()]);
 
-    return visibleEntries.map((entry) => {
-      const system = systemById.get(entry.bugId) || {};
+    return Array.from(allBugIds).map((bugId) => {
+      const entry = visibleById.get(bugId) || {};
+      const system = systemById.get(bugId) || {};
       return {
-        bugId: entry.bugId,
+        bugId,
         createdAt: system.createdAt || parseDisplayDate(entry.createdAt)?.toISOString() || new Date().toISOString(),
         updatedAt: system.updatedAt || parseDisplayDate(entry.updatedAt)?.toISOString() || new Date().toISOString(),
         status: system.status || "new",
@@ -964,6 +1021,20 @@ class GoogleSheetsService {
       weeklyReportTime: settingsMap.get("weekly_report_time") || "09:00",
       weeklyReportTimezone: settingsMap.get("weekly_report_timezone") || config.reportTimezone,
       lastWeeklyReportAt: settingsMap.get("last_weekly_report_at") || "",
+      launcherChannelId: settingsMap.get("launcher_channel_id") || "",
+      launcherMessageTs: settingsMap.get("launcher_message_ts") || "",
+    };
+  }
+
+  async getPersistedLauncher() {
+    const runtimeConfig = await this.getRuntimeConfig();
+    if (!runtimeConfig.launcherChannelId || !runtimeConfig.launcherMessageTs) {
+      return null;
+    }
+
+    return {
+      channelId: runtimeConfig.launcherChannelId,
+      messageTs: runtimeConfig.launcherMessageTs,
     };
   }
 
@@ -996,6 +1067,11 @@ class GoogleSheetsService {
       insertDataOption: "INSERT_ROWS",
       requestBody: { values: [[key, value, "Добавлено автоматически"]] },
     });
+  }
+
+  async persistLauncher(channelId, messageTs) {
+    await this.upsertSetting("launcher_channel_id", channelId || "");
+    await this.upsertSetting("launcher_message_ts", messageTs || "");
   }
 
   async buildReportSummary({ startDate = null, endDate = null } = {}) {

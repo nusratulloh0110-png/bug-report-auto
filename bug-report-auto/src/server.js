@@ -8,6 +8,20 @@ const app = Fastify({
   logger: true,
 });
 
+function authorizeInternal(request, reply) {
+  if (!config.internalApiToken) {
+    return true;
+  }
+
+  const provided = request.headers["x-internal-token"];
+  if (provided !== config.internalApiToken) {
+    reply.code(401).send({ ok: false, error: "Unauthorized" });
+    return false;
+  }
+
+  return true;
+}
+
 app.addContentTypeParser(
   "application/x-www-form-urlencoded",
   { parseAs: "string" },
@@ -22,21 +36,33 @@ app.get("/health", async () => {
 });
 
 app.post("/internal/publish-launcher", async (_request, reply) => {
+  if (!authorizeInternal(_request, reply)) {
+    return;
+  }
   await slackService.postLauncherMessage();
   return reply.send({ ok: true });
 });
 
 app.post("/internal/post-weekly-report", async (_request, reply) => {
+  if (!authorizeInternal(_request, reply)) {
+    return;
+  }
   await slackService.postPeriodicReport("weekly");
   return reply.send({ ok: true });
 });
 
 app.post("/internal/post-monthly-report", async (_request, reply) => {
+  if (!authorizeInternal(_request, reply)) {
+    return;
+  }
   await slackService.postPeriodicReport("monthly");
   return reply.send({ ok: true });
 });
 
 app.post("/internal/reapply-sheet-formatting", async (_request, reply) => {
+  if (!authorizeInternal(_request, reply)) {
+    return;
+  }
   await googleSheetsService.reapplyFormatting();
   return reply.send({ ok: true });
 });
