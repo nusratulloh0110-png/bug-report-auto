@@ -139,6 +139,17 @@ async function notifyInThread(bug, text) {
   });
 }
 
+async function notifyReporterDM(bug, text) {
+  if (!bug.reporterId) {
+    return;
+  }
+
+  await slackClient.chat.postMessage({
+    channel: bug.reporterId,
+    text,
+  });
+}
+
 async function openModal(triggerId, view) {
   await slackClient.views.open({
     trigger_id: triggerId,
@@ -330,6 +341,9 @@ export const slackService = {
     if (callbackId === CALLBACKS.REJECT_MODAL) {
       const reason = extractPlainTextValue(payload.view.state, "reason_block", "reason_input");
       runInBackground(() =>
+        notifyReporterDM(bug, `Ваш баг *#${bug.bugId}* был отклонён. Причина: ${reason}`)
+      );
+      runInBackground(async () =>
         updateBugStatusFromAction(
           bug.bugId,
           moderatorPatch(payload.user, {
@@ -349,8 +363,9 @@ export const slackService = {
         "master_bug_input"
       ).toUpperCase();
       const masterBug = bugStore.get(masterBugId);
+      const masterBugRow = masterBug ? 1 : await googleSheetsService.findBugRow(masterBugId);
 
-      if (!masterBug) {
+      if (!masterBug && masterBugRow == null) {
         return {
           response_action: "errors",
           errors: {
@@ -359,7 +374,7 @@ export const slackService = {
         };
       }
 
-      runInBackground(() =>
+      runInBackground(async () =>
         updateBugStatusFromAction(
           bug.bugId,
           moderatorPatch(payload.user, {
@@ -443,6 +458,7 @@ export const slackService = {
     }
 
     if (action.action_id === ACTIONS.MARK_FIXED) {
+      runInBackground(() => notifyReporterDM(bug, `Ваш баг *#${bug.bugId}* исправлен ✅`));
       runInBackground(() =>
         updateBugStatusFromAction(
           bug.bugId,
@@ -541,17 +557,24 @@ function parseSingleDate(value) {
 }
 
 function parseReportRange(text) {
-  const matches = String(text || "").match(/\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2}/g) || [];
+  const rawText = String(text || "").trim();
+  const matches = rawText.match(/\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2}/g) || [];
+  const product = rawText
+    .replace(/\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2}/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (matches.length >= 2) {
     const startDate = parseSingleDate(matches[0]);
     const endDate = parseSingleDate(matches[1]);
     if (startDate && endDate) {
       endDate.setHours(23, 59, 59, 999);
-      return { startDate, endDate };
+      return { startDate, endDate, product: product || null };
     }
   }
 
-  return {};
+  return {
+    product: product || null,
+  };
 }
 
 function buildInMemoryReportSummary(bugs, range) {
@@ -563,10 +586,17 @@ function buildInMemoryReportSummary(bugs, range) {
     if (range.endDate && createdAt > range.endDate) {
       return false;
     }
+    if (
+      range.product &&
+      String(bug.product || "").trim().toLowerCase() !== String(range.product).trim().toLowerCase()
+    ) {
+      return false;
+    }
     return true;
   });
 
   const countBy = (field, value) => filtered.filter((bug) => bug[field] === value).length;
+  const productHeader = range.product ? [`Продукт: ${range.product}`] : [];
   return [
     `*Отчет по багам*`,
     `Всего: ${filtered.length}`,

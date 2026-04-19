@@ -1,39 +1,39 @@
-import path from "node:path";
+﻿import path from "node:path";
 import { google } from "googleapis";
 import { config } from "../config.js";
 
 const SHEETS = {
-  bugs: "Реестр багов",
-  dashboard: "Сводка",
-  settings: "Настройки",
-  moderators: "Модераторы",
-  products: "Продукты",
-  system: "Служебные данные",
+  bugs: "Р РµРµСЃС‚СЂ Р±Р°РіРѕРІ",
+  dashboard: "РЎРІРѕРґРєР°",
+  settings: "РќР°СЃС‚СЂРѕР№РєРё",
+  moderators: "РњРѕРґРµСЂР°С‚РѕСЂС‹",
+  products: "РџСЂРѕРґСѓРєС‚С‹",
+  system: "РЎР»СѓР¶РµР±РЅС‹Рµ РґР°РЅРЅС‹Рµ",
 };
 
 const BUG_HEADERS = [
-  "ID бага",
-  "Создан",
-  "Обновлен",
-  "Статус",
-  "Модератор",
-  "Продукт",
-  "Айди клиники",
-  "Приоритет",
-  "Раздел",
-  "Описание",
-  "Комментарий к файлу",
-  "Репортер",
-  "Исправлен",
+  "ID Р±Р°РіР°",
+  "РЎРѕР·РґР°РЅ",
+  "РћР±РЅРѕРІР»РµРЅ",
+  "РЎС‚Р°С‚СѓСЃ",
+  "РњРѕРґРµСЂР°С‚РѕСЂ",
+  "РџСЂРѕРґСѓРєС‚",
+  "РђР№РґРё РєР»РёРЅРёРєРё",
+  "РџСЂРёРѕСЂРёС‚РµС‚",
+  "Р Р°Р·РґРµР»",
+  "РћРїРёСЃР°РЅРёРµ",
+  "РљРѕРјРјРµРЅС‚Р°СЂРёР№ Рє С„Р°Р№Р»Сѓ",
+  "Р РµРїРѕСЂС‚РµСЂ",
+  "РСЃРїСЂР°РІР»РµРЅ",
   "Jira Key",
   "Jira URL",
-  "Дубликат",
-  "Причина отклонения",
+  "Р”СѓР±Р»РёРєР°С‚",
+  "РџСЂРёС‡РёРЅР° РѕС‚РєР»РѕРЅРµРЅРёСЏ",
 ];
 
-const SETTINGS_HEADERS = ["Ключ", "Значение", "Описание"];
-const MODERATOR_HEADERS = ["Slack ID", "Имя / комментарий", "Активен"];
-const PRODUCT_HEADERS = ["Продукт", "Активен", "Комментарий"];
+const SETTINGS_HEADERS = ["РљР»СЋС‡", "Р—РЅР°С‡РµРЅРёРµ", "РћРїРёСЃР°РЅРёРµ"];
+const MODERATOR_HEADERS = ["Slack ID", "РРјСЏ / РєРѕРјРјРµРЅС‚Р°СЂРёР№", "РђРєС‚РёРІРµРЅ"];
+const PRODUCT_HEADERS = ["РџСЂРѕРґСѓРєС‚", "РђРєС‚РёРІРµРЅ", "РљРѕРјРјРµРЅС‚Р°СЂРёР№"];
 const SYSTEM_HEADERS = [
   "Bug ID",
   "Reporter ID",
@@ -52,18 +52,18 @@ const SYSTEM_HEADERS = [
 ];
 
 const STATUS_LABELS = {
-  new: "Новый",
-  triage: "В работе",
-  rejected: "Отклонен",
-  duplicate: "Дубликат",
-  fixed: "Исправлено",
+  new: "РќРѕРІС‹Р№",
+  triage: "Р’ СЂР°Р±РѕС‚Рµ",
+  rejected: "РћС‚РєР»РѕРЅРµРЅ",
+  duplicate: "Р”СѓР±Р»РёРєР°С‚",
+  fixed: "РСЃРїСЂР°РІР»РµРЅРѕ",
 };
 
 const PRIORITY_LABELS = {
-  very_high: "Очень высокий",
-  high: "Высокий",
-  medium: "Средний",
-  low: "Низкий",
+  very_high: "РћС‡РµРЅСЊ РІС‹СЃРѕРєРёР№",
+  high: "Р’С‹СЃРѕРєРёР№",
+  medium: "РЎСЂРµРґРЅРёР№",
+  low: "РќРёР·РєРёР№",
 };
 
 function formatDisplayDate(dateValue) {
@@ -109,12 +109,12 @@ function parseDisplayDate(value) {
 
 function formatStatus(status) {
   const normalized = String(status || "").trim();
-  return STATUS_LABELS[normalized] || normalized || "—";
+  return STATUS_LABELS[normalized] || normalized || "вЂ”";
 }
 
 function formatPriority(priority) {
   const normalized = String(priority || "").trim();
-  return PRIORITY_LABELS[normalized] || normalized || "—";
+  return PRIORITY_LABELS[normalized] || normalized || "вЂ”";
 }
 
 function asSheetRow(bug) {
@@ -211,14 +211,14 @@ function rowsToSystemBugs(rows) {
 function buildDashboardValues(entries) {
   const productCounts = new Map();
   for (const entry of entries) {
-    const product = entry.product || "Не указан";
+    const product = entry.product || "РќРµ СѓРєР°Р·Р°РЅ";
     productCounts.set(product, (productCounts.get(product) || 0) + 1);
   }
 
   const sortedProducts = Array.from(productCounts.entries()).sort((a, b) => b[1] - a[1]);
   const topProducts = sortedProducts.slice(0, 4);
   while (topProducts.length < 4) {
-    topProducts.push(["—", 0]);
+    topProducts.push(["вЂ”", 0]);
   }
 
   const latest = entries
@@ -231,25 +231,25 @@ function buildDashboardValues(entries) {
     .slice(0, 10);
 
   const values = [
-    ["Центр отчетности багов", "", "", "", "", "", "", ""],
-    ["Последнее обновление", formatDisplayDate(new Date()), "", "", "", "", "", ""],
+    ["Р¦РµРЅС‚СЂ РѕС‚С‡РµС‚РЅРѕСЃС‚Рё Р±Р°РіРѕРІ", "", "", "", "", "", "", ""],
+    ["РџРѕСЃР»РµРґРЅРµРµ РѕР±РЅРѕРІР»РµРЅРёРµ", formatDisplayDate(new Date()), "", "", "", "", "", ""],
     ["", "", "", "", "", "", "", ""],
-    ["Всего багов", entries.length, "", "", "", "", "", ""],
-    ["Новые", entries.filter((entry) => entry.status === "Новый").length, "", "", "", "", "", ""],
-    ["В работе", entries.filter((entry) => entry.status === "В работе").length, "", "", "", "", "", ""],
-    ["Отклоненные", entries.filter((entry) => entry.status === "Отклонен").length, "", "", "", "", "", ""],
-    ["Дубликаты", entries.filter((entry) => entry.status === "Дубликат").length, "", "", "", "", "", ""],
-    ["Исправленные", entries.filter((entry) => entry.status === "Исправлено").length, "", "", "", "", "", ""],
+    ["Р’СЃРµРіРѕ Р±Р°РіРѕРІ", entries.length, "", "", "", "", "", ""],
+    ["РќРѕРІС‹Рµ", entries.filter((entry) => entry.status === "РќРѕРІС‹Р№").length, "", "", "", "", "", ""],
+    ["Р’ СЂР°Р±РѕС‚Рµ", entries.filter((entry) => entry.status === "Р’ СЂР°Р±РѕС‚Рµ").length, "", "", "", "", "", ""],
+    ["РћС‚РєР»РѕРЅРµРЅРЅС‹Рµ", entries.filter((entry) => entry.status === "РћС‚РєР»РѕРЅРµРЅ").length, "", "", "", "", "", ""],
+    ["Р”СѓР±Р»РёРєР°С‚С‹", entries.filter((entry) => entry.status === "Р”СѓР±Р»РёРєР°С‚").length, "", "", "", "", "", ""],
+    ["РСЃРїСЂР°РІР»РµРЅРЅС‹Рµ", entries.filter((entry) => entry.status === "РСЃРїСЂР°РІР»РµРЅРѕ").length, "", "", "", "", "", ""],
     ["", "", "", "", "", "", "", ""],
-    ["Статусы", "Количество", "", "Приоритеты", "Количество", "", "Продукты", "Количество"],
-    ["Новый", entries.filter((entry) => entry.status === "Новый").length, "", "Очень высокий", entries.filter((entry) => entry.priority === "Очень высокий").length, "", topProducts[0][0], topProducts[0][1]],
-    ["В работе", entries.filter((entry) => entry.status === "В работе").length, "", "Высокий", entries.filter((entry) => entry.priority === "Высокий").length, "", topProducts[1][0], topProducts[1][1]],
-    ["Отклонен", entries.filter((entry) => entry.status === "Отклонен").length, "", "Средний", entries.filter((entry) => entry.priority === "Средний").length, "", topProducts[2][0], topProducts[2][1]],
-    ["Дубликат", entries.filter((entry) => entry.status === "Дубликат").length, "", "Низкий", entries.filter((entry) => entry.priority === "Низкий").length, "", topProducts[3][0], topProducts[3][1]],
-    ["Исправлено", entries.filter((entry) => entry.status === "Исправлено").length, "", "", "", "", "", ""],
+    ["РЎС‚Р°С‚СѓСЃС‹", "РљРѕР»РёС‡РµСЃС‚РІРѕ", "", "РџСЂРёРѕСЂРёС‚РµС‚С‹", "РљРѕР»РёС‡РµСЃС‚РІРѕ", "", "РџСЂРѕРґСѓРєС‚С‹", "РљРѕР»РёС‡РµСЃС‚РІРѕ"],
+    ["РќРѕРІС‹Р№", entries.filter((entry) => entry.status === "РќРѕРІС‹Р№").length, "", "РћС‡РµРЅСЊ РІС‹СЃРѕРєРёР№", entries.filter((entry) => entry.priority === "РћС‡РµРЅСЊ РІС‹СЃРѕРєРёР№").length, "", topProducts[0][0], topProducts[0][1]],
+    ["Р’ СЂР°Р±РѕС‚Рµ", entries.filter((entry) => entry.status === "Р’ СЂР°Р±РѕС‚Рµ").length, "", "Р’С‹СЃРѕРєРёР№", entries.filter((entry) => entry.priority === "Р’С‹СЃРѕРєРёР№").length, "", topProducts[1][0], topProducts[1][1]],
+    ["РћС‚РєР»РѕРЅРµРЅ", entries.filter((entry) => entry.status === "РћС‚РєР»РѕРЅРµРЅ").length, "", "РЎСЂРµРґРЅРёР№", entries.filter((entry) => entry.priority === "РЎСЂРµРґРЅРёР№").length, "", topProducts[2][0], topProducts[2][1]],
+    ["Р”СѓР±Р»РёРєР°С‚", entries.filter((entry) => entry.status === "Р”СѓР±Р»РёРєР°С‚").length, "", "РќРёР·РєРёР№", entries.filter((entry) => entry.priority === "РќРёР·РєРёР№").length, "", topProducts[3][0], topProducts[3][1]],
+    ["РСЃРїСЂР°РІР»РµРЅРѕ", entries.filter((entry) => entry.status === "РСЃРїСЂР°РІР»РµРЅРѕ").length, "", "", "", "", "", ""],
     ["", "", "", "", "", "", "", ""],
-    ["Последние 10 багов", "", "", "", "", "", "", ""],
-    ["ID бага", "Статус", "Клиника", "Приоритет", "Раздел", "Создан", "", ""],
+    ["РџРѕСЃР»РµРґРЅРёРµ 10 Р±Р°РіРѕРІ", "", "", "", "", "", "", ""],
+    ["ID Р±Р°РіР°", "РЎС‚Р°С‚СѓСЃ", "РљР»РёРЅРёРєР°", "РџСЂРёРѕСЂРёС‚РµС‚", "Р Р°Р·РґРµР»", "РЎРѕР·РґР°РЅ", "", ""],
   ];
 
   for (const entry of latest) {
@@ -405,7 +405,7 @@ class GoogleSheetsService {
       rowsToAdd.push([
         "slack_bug_channel_id",
         config.slackBugChannelId || "",
-        "Канал Slack, куда бот публикует баги и отчеты",
+        "РљР°РЅР°Р» Slack, РєСѓРґР° Р±РѕС‚ РїСѓР±Р»РёРєСѓРµС‚ Р±Р°РіРё Рё РѕС‚С‡РµС‚С‹",
       ]);
     }
 
@@ -413,7 +413,7 @@ class GoogleSheetsService {
       rowsToAdd.push([
         "weekly_report_enabled",
         "TRUE",
-        "Отправлять еженедельный отчет автоматически",
+        "РћС‚РїСЂР°РІР»СЏС‚СЊ РµР¶РµРЅРµРґРµР»СЊРЅС‹Р№ РѕС‚С‡РµС‚ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё",
       ]);
     }
 
@@ -421,7 +421,7 @@ class GoogleSheetsService {
       rowsToAdd.push([
         "weekly_report_time",
         "09:00",
-        "Время отправки еженедельного отчета",
+        "Р’СЂРµРјСЏ РѕС‚РїСЂР°РІРєРё РµР¶РµРЅРµРґРµР»СЊРЅРѕРіРѕ РѕС‚С‡РµС‚Р°",
       ]);
     }
 
@@ -429,7 +429,7 @@ class GoogleSheetsService {
       rowsToAdd.push([
         "weekly_report_timezone",
         config.reportTimezone,
-        "Таймзона для автоматического еженедельного отчета",
+        "РўР°Р№РјР·РѕРЅР° РґР»СЏ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРѕРіРѕ РµР¶РµРЅРµРґРµР»СЊРЅРѕРіРѕ РѕС‚С‡РµС‚Р°",
       ]);
     }
 
@@ -437,7 +437,7 @@ class GoogleSheetsService {
       rowsToAdd.push([
         "last_weekly_report_at",
         "",
-        "Служебное поле: когда еженедельный отчет был отправлен в последний раз",
+        "РЎР»СѓР¶РµР±РЅРѕРµ РїРѕР»Рµ: РєРѕРіРґР° РµР¶РµРЅРµРґРµР»СЊРЅС‹Р№ РѕС‚С‡РµС‚ Р±С‹Р» РѕС‚РїСЂР°РІР»РµРЅ РІ РїРѕСЃР»РµРґРЅРёР№ СЂР°Р·",
       ]);
     }
 
@@ -445,7 +445,7 @@ class GoogleSheetsService {
       rowsToAdd.push([
         "launcher_channel_id",
         config.slackBugChannelId || "",
-        "Служебное поле: канал с launcher-сообщением",
+        "РЎР»СѓР¶РµР±РЅРѕРµ РїРѕР»Рµ: РєР°РЅР°Р» СЃ launcher-СЃРѕРѕР±С‰РµРЅРёРµРј",
       ]);
     }
 
@@ -453,7 +453,7 @@ class GoogleSheetsService {
       rowsToAdd.push([
         "launcher_message_ts",
         "",
-        "Служебное поле: TS launcher-сообщения в Slack",
+        "РЎР»СѓР¶РµР±РЅРѕРµ РїРѕР»Рµ: TS launcher-СЃРѕРѕР±С‰РµРЅРёСЏ РІ Slack",
       ]);
     }
 
@@ -487,7 +487,7 @@ class GoogleSheetsService {
     const existingIds = new Set(rows.map((row) => row[0]).filter(Boolean));
     const rowsToAdd = config.slackModeratorIds
       .filter((id) => !existingIds.has(id))
-      .map((id) => [id, "Основной модератор", "TRUE"]);
+      .map((id) => [id, "РћСЃРЅРѕРІРЅРѕР№ РјРѕРґРµСЂР°С‚РѕСЂ", "TRUE"]);
 
     if (rowsToAdd.length > 0) {
       await this.sheetsApi.spreadsheets.values.append({
@@ -515,9 +515,9 @@ class GoogleSheetsService {
 
     const rows = existing.data.values || [];
     const existingProducts = new Set(rows.map((row) => row[0]).filter(Boolean));
-    const defaults = ["ЛИС", "Склад", "Касса"]
+    const defaults = ["Р›РРЎ", "РЎРєР»Р°Рґ", "РљР°СЃСЃР°"]
       .filter((product) => !existingProducts.has(product))
-      .map((product) => [product, "TRUE", "Базовый продукт"]);
+      .map((product) => [product, "TRUE", "Р‘Р°Р·РѕРІС‹Р№ РїСЂРѕРґСѓРєС‚"]);
 
     if (defaults.length > 0) {
       await this.sheetsApi.spreadsheets.values.append({
@@ -642,7 +642,7 @@ class GoogleSheetsService {
             booleanRule: {
               condition: {
                 type: "CUSTOM_FORMULA",
-                values: [{ userEnteredValue: "=$D2=\"В работе\"" }],
+                values: [{ userEnteredValue: "=$D2=\"Р’ СЂР°Р±РѕС‚Рµ\"" }],
               },
               format: {
                 backgroundColor: { red: 1, green: 0.96, blue: 0.74 },
@@ -666,7 +666,7 @@ class GoogleSheetsService {
             booleanRule: {
               condition: {
                 type: "CUSTOM_FORMULA",
-                values: [{ userEnteredValue: "=$D2=\"Дубликат\"" }],
+                values: [{ userEnteredValue: "=$D2=\"Р”СѓР±Р»РёРєР°С‚\"" }],
               },
               format: {
                 backgroundColor: { red: 1, green: 1, blue: 1 },
@@ -690,7 +690,7 @@ class GoogleSheetsService {
             booleanRule: {
               condition: {
                 type: "CUSTOM_FORMULA",
-                values: [{ userEnteredValue: "=$D2=\"Отклонен\"" }],
+                values: [{ userEnteredValue: "=$D2=\"РћС‚РєР»РѕРЅРµРЅ\"" }],
               },
               format: {
                 backgroundColor: { red: 0.98, green: 0.84, blue: 0.84 },
@@ -714,7 +714,7 @@ class GoogleSheetsService {
             booleanRule: {
               condition: {
                 type: "CUSTOM_FORMULA",
-                values: [{ userEnteredValue: "=$D2=\"Исправлено\"" }],
+                values: [{ userEnteredValue: "=$D2=\"РСЃРїСЂР°РІР»РµРЅРѕ\"" }],
               },
               format: {
                 backgroundColor: { red: 0.85, green: 0.94, blue: 0.85 },
@@ -724,6 +724,10 @@ class GoogleSheetsService {
         },
       },
     ];
+
+    // Leave bug row background coloring to syncBug(), otherwise conditional rules
+    // can override per-row colors after updates.
+    requests.splice(6);
 
     try {
       await this.sheetsApi.spreadsheets.batchUpdate({
@@ -892,6 +896,14 @@ class GoogleSheetsService {
       this.findBugRow(bug.bugId),
       this.findSystemRow(bug.bugId),
     ]);
+    const statusColors = {
+      new: { red: 0.85, green: 0.93, blue: 1 },
+      triage: { red: 1, green: 0.95, blue: 0.6 },
+      fixed: { red: 0.72, green: 0.93, blue: 0.75 },
+      rejected: { red: 0.96, green: 0.8, blue: 0.8 },
+      duplicate: { red: 0.9, green: 0.9, blue: 0.9 },
+    };
+    let bugRowNumber = existingBugRow;
 
     if (existingBugRow) {
       await this.sheetsApi.spreadsheets.values.update({
@@ -908,6 +920,7 @@ class GoogleSheetsService {
         insertDataOption: "INSERT_ROWS",
         requestBody: { values: [row] },
       });
+      bugRowNumber = await this.findBugRow(bug.bugId);
     }
 
     if (existingSystemRow) {
@@ -924,6 +937,34 @@ class GoogleSheetsService {
         valueInputOption: "RAW",
         insertDataOption: "INSERT_ROWS",
         requestBody: { values: [systemRow] },
+      });
+    }
+
+    const backgroundColor = statusColors[bug.status] || { red: 1, green: 1, blue: 1 };
+    if (bugRowNumber) {
+      await this.sheetsApi.spreadsheets.batchUpdate({
+        spreadsheetId: this.spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              repeatCell: {
+                range: {
+                  sheetId: this.sheetIds[SHEETS.bugs],
+                  startRowIndex: bugRowNumber - 1,
+                  endRowIndex: bugRowNumber,
+                  startColumnIndex: 0,
+                  endColumnIndex: BUG_HEADERS.length,
+                },
+                cell: {
+                  userEnteredFormat: {
+                    backgroundColor,
+                  },
+                },
+                fields: "userEnteredFormat.backgroundColor",
+              },
+            },
+          ],
+        },
       });
     }
 
@@ -1016,7 +1057,7 @@ class GoogleSheetsService {
     return {
       channelId: settingsMap.get("slack_bug_channel_id") || config.slackBugChannelId,
       moderatorIds: moderatorIds.length > 0 ? moderatorIds : config.slackModeratorIds,
-      products: products.length > 0 ? products : ["ЛИС", "Склад", "Касса"],
+      products: products.length > 0 ? products : ["Р›РРЎ", "РЎРєР»Р°Рґ", "РљР°СЃСЃР°"],
       weeklyReportEnabled: normalizeBoolean(settingsMap.get("weekly_report_enabled")),
       weeklyReportTime: settingsMap.get("weekly_report_time") || "09:00",
       weeklyReportTimezone: settingsMap.get("weekly_report_timezone") || config.reportTimezone,
@@ -1065,7 +1106,7 @@ class GoogleSheetsService {
       range: `${SHEETS.settings}!A:C`,
       valueInputOption: "RAW",
       insertDataOption: "INSERT_ROWS",
-      requestBody: { values: [[key, value, "Добавлено автоматически"]] },
+      requestBody: { values: [[key, value, "Р”РѕР±Р°РІР»РµРЅРѕ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё"]] },
     });
   }
 
@@ -1074,7 +1115,7 @@ class GoogleSheetsService {
     await this.upsertSetting("launcher_message_ts", messageTs || "");
   }
 
-  async buildReportSummary({ startDate = null, endDate = null } = {}) {
+  async buildReportSummary({ startDate = null, endDate = null, product = null } = {}) {
     await this.initialize();
     const entries = await this.getBugRows();
     const filtered = entries.filter((entry) => {
@@ -1088,43 +1129,53 @@ class GoogleSheetsService {
       if (endDate && createdAt > endDate) {
         return false;
       }
+      if (
+        product &&
+        String(entry.product || "").trim().toLowerCase() !== String(product).trim().toLowerCase()
+      ) {
+        return false;
+      }
       return true;
     });
 
     const countBy = (field, value) => filtered.filter((entry) => entry[field] === value).length;
     const products = new Map();
     for (const entry of filtered) {
-      const product = entry.product || "Не указан";
+      const product = entry.product || "РќРµ СѓРєР°Р·Р°РЅ";
       products.set(product, (products.get(product) || 0) + 1);
     }
 
     const topProducts = Array.from(products.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
-      .map(([name, count]) => `• ${name}: ${count}`)
+      .map(([name, count]) => `вЂў ${name}: ${count}`)
       .join("\n");
 
     const periodLabel =
       startDate && endDate
-        ? `${formatDisplayDate(startDate)} — ${formatDisplayDate(endDate)}`
-        : "за все время";
+        ? `${formatDisplayDate(startDate)} вЂ” ${formatDisplayDate(endDate)}`
+        : "Р·Р° РІСЃРµ РІСЂРµРјСЏ";
+
+    const productLabel = product ? `Продукт: ${product}` : null;
 
     return [
-      `*Отчет по багам*`,
-      `Период: ${periodLabel}`,
-      `Всего: ${filtered.length}`,
-      `Новые: ${countBy("status", "Новый")}`,
-      `В работе: ${countBy("status", "В работе")}`,
-      `Отклоненные: ${countBy("status", "Отклонен")}`,
-      `Дубликаты: ${countBy("status", "Дубликат")}`,
-      `Исправленные: ${countBy("status", "Исправлено")}`,
-      `Очень высокий приоритет: ${countBy("priority", "Очень высокий")}`,
-      `Высокий приоритет: ${countBy("priority", "Высокий")}`,
-      `Средний приоритет: ${countBy("priority", "Средний")}`,
-      `Низкий приоритет: ${countBy("priority", "Низкий")}`,
-      topProducts ? `Топ продуктов:\n${topProducts}` : "Топ продуктов: нет данных",
+      `*РћС‚С‡РµС‚ РїРѕ Р±Р°РіР°Рј*`,
+      `РџРµСЂРёРѕРґ: ${periodLabel}`,
+      ...(productLabel ? [productLabel] : []),
+      `Р’СЃРµРіРѕ: ${filtered.length}`,
+      `РќРѕРІС‹Рµ: ${countBy("status", "РќРѕРІС‹Р№")}`,
+      `Р’ СЂР°Р±РѕС‚Рµ: ${countBy("status", "Р’ СЂР°Р±РѕС‚Рµ")}`,
+      `РћС‚РєР»РѕРЅРµРЅРЅС‹Рµ: ${countBy("status", "РћС‚РєР»РѕРЅРµРЅ")}`,
+      `Р”СѓР±Р»РёРєР°С‚С‹: ${countBy("status", "Р”СѓР±Р»РёРєР°С‚")}`,
+      `РСЃРїСЂР°РІР»РµРЅРЅС‹Рµ: ${countBy("status", "РСЃРїСЂР°РІР»РµРЅРѕ")}`,
+      `РћС‡РµРЅСЊ РІС‹СЃРѕРєРёР№ РїСЂРёРѕСЂРёС‚РµС‚: ${countBy("priority", "РћС‡РµРЅСЊ РІС‹СЃРѕРєРёР№")}`,
+      `Р’С‹СЃРѕРєРёР№ РїСЂРёРѕСЂРёС‚РµС‚: ${countBy("priority", "Р’С‹СЃРѕРєРёР№")}`,
+      `РЎСЂРµРґРЅРёР№ РїСЂРёРѕСЂРёС‚РµС‚: ${countBy("priority", "РЎСЂРµРґРЅРёР№")}`,
+      `РќРёР·РєРёР№ РїСЂРёРѕСЂРёС‚РµС‚: ${countBy("priority", "РќРёР·РєРёР№")}`,
+      topProducts ? `РўРѕРї РїСЂРѕРґСѓРєС‚РѕРІ:\n${topProducts}` : "РўРѕРї РїСЂРѕРґСѓРєС‚РѕРІ: РЅРµС‚ РґР°РЅРЅС‹С…",
     ].join("\n");
   }
 }
 
 export const googleSheetsService = new GoogleSheetsService();
+
