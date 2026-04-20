@@ -1,5 +1,5 @@
 import { ACTIONS } from "./constants.js";
-import { encodeActionValue, plainText } from "./helpers.js";
+import { encodeActionValue, formatDisplayDate, plainText } from "./helpers.js";
 
 const STATUS_LABELS = {
   new: "Новый",
@@ -66,18 +66,6 @@ function buildTriageActions(bug) {
 
 function formatMultiline(text) {
   return text ? text.replace(/\n/g, "\n> ") : "—";
-}
-
-function formatDisplayDate(dateValue) {
-  return new Date(dateValue).toLocaleString("ru-RU", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
 }
 
 export function buildBugBlocks(bug) {

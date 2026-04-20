@@ -89,6 +89,8 @@ export function startWeeklyReportScheduler(slackService, googleSheetsService, lo
   }
 
   const timer = setInterval(tick, intervalMs);
-  setTimeout(tick, 5000);
+  tick().catch((error) => {
+    logger?.error?.({ message: error.message, stack: error.stack }, "Initial scheduler tick failed");
+  });
   return timer;
 }

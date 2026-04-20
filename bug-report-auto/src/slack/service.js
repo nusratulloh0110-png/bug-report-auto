@@ -304,19 +304,33 @@ export const slackService = {
   },
 
   async handleViewSubmission(payload) {
+    if (!payload.view?.callback_id) {
+      return { response_action: "clear" };
+    }
     const callbackId = payload.view.callback_id;
 
     if (callbackId === CALLBACKS.BUG_CREATE_MODAL) {
+      const reporterId = payload.user?.id;
       runInBackground(async () => {
-        await this.refreshRuntimeConfig();
-        await googleSheetsService.ensureFreshSequence(bugStore);
-        const bug = bugStore.create(normalizeBugFromSubmission(payload.view, payload.user));
-        const publishedBug = await publishBugCard(bug, this.runtimeConfig.channelId);
+        try {
+          await this.refreshRuntimeConfig();
+          await googleSheetsService.ensureFreshSequence(bugStore);
+          const bug = bugStore.create(normalizeBugFromSubmission(payload.view, payload.user));
+          const publishedBug = await publishBugCard(bug, this.runtimeConfig.channelId);
 
-        await notifyInThread(
-          publishedBug,
-          `Баг зарегистрирован как *#${publishedBug.bugId}*. Если нужно, прикрепите сюда скриншоты, видео или файлы отдельным сообщением в этот тред.`
-        );
+          await notifyInThread(
+            publishedBug,
+            `Баг зарегистрирован как *#${publishedBug.bugId}*. Если нужно, прикрепите сюда скриншоты, видео или файлы отдельным сообщением в этот тред.`
+          );
+        } catch (error) {
+          console.error("Failed to create bug", error);
+          if (reporterId) {
+            await slackClient.chat.postMessage({
+              channel: reporterId,
+              text: "Не удалось зарегистрировать баг. Пожалуйста, попробуйте ещё раз или обратитесь к администратору.",
+            }).catch(() => {});
+          }
+        }
       });
 
       return {
@@ -340,6 +354,12 @@ export const slackService = {
 
     if (callbackId === CALLBACKS.REJECT_MODAL) {
       const reason = extractPlainTextValue(payload.view.state, "reason_block", "reason_input");
+      if (!reason) {
+        return {
+          response_action: "errors",
+          errors: { reason_block: "Укажите причину отклонения." },
+        };
+      }
       runInBackground(() =>
         notifyReporterDM(bug, `Ваш баг *#${bug.bugId}* был отклонён. Причина: ${reason}`)
       );
@@ -362,6 +382,12 @@ export const slackService = {
         "master_bug_block",
         "master_bug_input"
       ).toUpperCase();
+      if (!masterBugId) {
+        return {
+          response_action: "errors",
+          errors: { master_bug_block: "Укажите BUG-ID оригинального бага." },
+        };
+      }
       const masterBug = bugStore.get(masterBugId);
       const masterBugRow = masterBug ? 1 : await googleSheetsService.findBugRow(masterBugId);
 
@@ -389,6 +415,12 @@ export const slackService = {
 
     if (callbackId === CALLBACKS.LINK_JIRA_MODAL) {
       const jiraKey = extractPlainTextValue(payload.view.state, "jira_key_block", "jira_key_input");
+      if (!jiraKey) {
+        return {
+          response_action: "errors",
+          errors: { jira_key_block: "Укажите ключ Jira." },
+        };
+      }
       const jiraUrl = extractPlainTextValue(payload.view.state, "jira_url_block", "jira_url_input");
       runInBackground(() =>
         updateBugStatusFromAction(
@@ -425,7 +457,13 @@ export const slackService = {
       action.action_id === ACTIONS.MODERATOR_MORE
         ? decodeActionValue(extractSelectedOptionValue(action))
         : decodeActionValue(action?.value);
-    const { bugId } = actionValue;
+    const bugId = actionValue?.bugId;
+    if (!bugId) {
+      return {
+        response_type: "ephemeral",
+        text: "Не удалось обработать действие. Попробуйте еще раз.",
+      };
+    }
     const bug = bugStore.get(bugId);
 
     if (!bug) {

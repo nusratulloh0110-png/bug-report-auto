@@ -1,6 +1,7 @@
 ﻿import path from "node:path";
 import { google } from "googleapis";
 import { config } from "../config.js";
+import { formatDisplayDate } from "../slack/helpers.js";
 
 const SHEETS = {
   bugs: "Реестр багов",
@@ -95,18 +96,6 @@ const LEGACY_PRODUCT_LABELS = {
   "РЎРєР»Р°Рґ": "Склад",
   "РљР°СЃСЃР°": "Касса",
 };
-
-function formatDisplayDate(dateValue) {
-  return new Date(dateValue).toLocaleString("ru-RU", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-}
 
 function parseDisplayDate(value) {
   if (!value) {
@@ -623,12 +612,16 @@ class GoogleSheetsService {
       updatedRow[5] = nextProduct;
       updatedRow[7] = nextPriority;
 
-      await this.sheetsApi.spreadsheets.values.update({
-        spreadsheetId: this.spreadsheetId,
-        range: `${SHEETS.bugs}!A${index + 2}:Q${index + 2}`,
-        valueInputOption: "RAW",
-        requestBody: { values: [updatedRow] },
-      });
+      try {
+        await this.sheetsApi.spreadsheets.values.update({
+          spreadsheetId: this.spreadsheetId,
+          range: `${SHEETS.bugs}!A${index + 2}:Q${index + 2}`,
+          valueInputOption: "RAW",
+          requestBody: { values: [updatedRow] },
+        });
+      } catch (error) {
+        console.error(`Failed to migrate row ${index + 2}`, error);
+      }
     }
   }
 
