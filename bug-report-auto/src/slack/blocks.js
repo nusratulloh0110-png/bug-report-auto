@@ -93,10 +93,31 @@ export function buildBugBlocks(bug) {
         { type: "mrkdwn", text: `*Репортер:*\n<@${bug.reporterId}>` },
         { type: "mrkdwn", text: `*Модератор:*\n${moderatorText}` },
         { type: "mrkdwn", text: `*Продукт:*\n${bug.product || "—"}` },
-        { type: "mrkdwn", text: `*Айди клиники:*\n${bug.clinicId}` },
-        { type: "mrkdwn", text: `*Раздел:*\n${bug.section}` },
+        { type: "mrkdwn", text: `*Айди клиники:*\n${bug.clinicId || "—"}` },
+        { type: "mrkdwn", text: `*Роль пользователя:*\n${bug.userRole || "—"}` },
+        { type: "mrkdwn", text: `*Раздел:*\n${bug.section || "—"}` },
         { type: "mrkdwn", text: `*Связь с Jira:*\n${jiraText}` },
         { type: "mrkdwn", text: `*Дубликат:*\n${duplicateText}` },
+      ],
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Шаги воспроизведения*\n> ${formatMultiline(bug.reproductionSteps)}`,
+      },
+    },
+    {
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*Ожидаемый результат*\n> ${formatMultiline(bug.expectedResult)}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Фактический результат*\n> ${formatMultiline(bug.actualResult)}`,
+        },
       ],
     },
     {

@@ -42,6 +42,16 @@ export function buildBugReportModal(products = []) {
       },
       {
         type: "input",
+        block_id: "user_role_block",
+        label: plainText("Роль пользователя"),
+        element: {
+          type: "plain_text_input",
+          action_id: "user_role_input",
+          placeholder: plainText("Например: Врач, Кассир, Админ"),
+        },
+      },
+      {
+        type: "input",
         block_id: "priority_block",
         label: plainText("Приоритетность"),
         element: {
@@ -68,13 +78,46 @@ export function buildBugReportModal(products = []) {
       },
       {
         type: "input",
+        block_id: "reproduction_steps_block",
+        label: plainText("Шаги воспроизведения"),
+        element: {
+          type: "plain_text_input",
+          action_id: "reproduction_steps_input",
+          multiline: true,
+          placeholder: plainText("Например: Нажал сюда -> перешел туда -> появилась ошибка"),
+        },
+      },
+      {
+        type: "input",
+        block_id: "expected_result_block",
+        label: plainText("Ожидаемый результат"),
+        element: {
+          type: "plain_text_input",
+          action_id: "expected_result_input",
+          multiline: true,
+          placeholder: plainText("Что должно было произойти"),
+        },
+      },
+      {
+        type: "input",
+        block_id: "actual_result_block",
+        label: plainText("Фактический результат"),
+        element: {
+          type: "plain_text_input",
+          action_id: "actual_result_input",
+          multiline: true,
+          placeholder: plainText("Что происходит сейчас"),
+        },
+      },
+      {
+        type: "input",
         block_id: "description_block",
         label: plainText("Описание"),
         element: {
           type: "plain_text_input",
           action_id: "description_input",
           multiline: true,
-          placeholder: plainText("Опишите проблему подробно"),
+          placeholder: plainText("Дополнительный контекст, детали и комментарии"),
         },
       },
       {

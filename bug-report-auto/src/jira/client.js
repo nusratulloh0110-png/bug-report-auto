@@ -1,6 +1,13 @@
 import { Buffer } from "node:buffer";
 import { config } from "../config.js";
 
+const PRIORITY_LABELS = {
+  very_high: "Очень высокий",
+  high: "Высокий",
+  medium: "Средний",
+  low: "Низкий",
+};
+
 function normalizeLabel(value) {
   return String(value || "")
     .trim()
@@ -8,6 +15,10 @@ function normalizeLabel(value) {
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 255);
+}
+
+function formatPriority(priority) {
+  return PRIORITY_LABELS[String(priority || "").trim()] || String(priority || "").trim() || "не указан";
 }
 
 function textNode(text) {
@@ -46,7 +57,8 @@ function buildDescriptionDocument(bug, options = {}) {
     `Имя репортера: ${bug.reporterName || "не указано"}`,
     `Продукт: ${bug.product || "не указан"}`,
     `ID клиники: ${bug.clinicId || "не указан"}`,
-    `Приоритет: ${bug.priority || "не указан"}`,
+    `Роль пользователя: ${bug.userRole || "не указана"}`,
+    `Приоритет: ${formatPriority(bug.priority)}`,
     `Раздел: ${bug.section || "не указан"}`,
     `Комментарий к вложению: ${bug.attachmentNote || "не указан"}`,
     `Создано: ${bug.createdAt || "не указано"}`,
@@ -59,6 +71,12 @@ function buildDescriptionDocument(bug, options = {}) {
   const content = [
     paragraph("Баг-репорт импортирован из Slack."),
     bulletList(items),
+    paragraph("Шаги воспроизведения"),
+    paragraph(bug.reproductionSteps || "Не указаны."),
+    paragraph("Ожидаемый результат"),
+    paragraph(bug.expectedResult || "Не указан."),
+    paragraph("Фактический результат"),
+    paragraph(bug.actualResult || "Не указан."),
     paragraph("Описание"),
     paragraph(bug.description || "Описание не указано."),
   ];
@@ -81,7 +99,7 @@ function buildSummary(bug, summaryOverride = "") {
     return custom.slice(0, 255);
   }
 
-  const parts = [bug.bugId, bug.product, bug.section, bug.description]
+  const parts = [bug.bugId, bug.product, bug.section, bug.actualResult || bug.description]
     .filter(Boolean)
     .join(" | ");
 
@@ -99,6 +117,7 @@ async function jiraRequest(path, body) {
       ).toString("base64")}`,
     },
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(15000),
   });
 
   if (response.ok) {

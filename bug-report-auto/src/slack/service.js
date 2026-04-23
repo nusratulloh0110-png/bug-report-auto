@@ -65,7 +65,19 @@ function normalizeBugFromSubmission(view, user) {
   return {
     clinicId: extractPlainTextValue(state, "clinic_id_block", "clinic_id_input"),
     product: extractStaticValue(state, "product_block", "product_select"),
+    userRole: extractPlainTextValue(state, "user_role_block", "user_role_input"),
     description: extractPlainTextValue(state, "description_block", "description_input"),
+    reproductionSteps: extractPlainTextValue(
+      state,
+      "reproduction_steps_block",
+      "reproduction_steps_input"
+    ),
+    expectedResult: extractPlainTextValue(
+      state,
+      "expected_result_block",
+      "expected_result_input"
+    ),
+    actualResult: extractPlainTextValue(state, "actual_result_block", "actual_result_input"),
     priority: extractStaticValue(state, "priority_block", "priority_select"),
     section: extractPlainTextValue(state, "section_block", "section_input"),
     attachmentNote: extractPlainTextValue(
@@ -430,32 +442,37 @@ export const slackService = {
         "jira_summary_input"
       );
       const note = extractPlainTextValue(payload.view.state, "jira_note_block", "jira_note_input");
+      runInBackground(async () => {
+        try {
+          const currentBug = bugStore.get(bug.bugId);
+          if (currentBug?.jiraKey) {
+            return;
+          }
 
-      try {
-        const issue = await jiraClient.createIssueFromBug(bug, {
-          summary,
-          extraContext: note,
-          moderatorName: payload.user.username || payload.user.name || payload.user.id,
-        });
+          const issue = await jiraClient.createIssueFromBug(bug, {
+            summary,
+            extraContext: note,
+            moderatorName: payload.user.username || payload.user.name || payload.user.id,
+          });
 
-        await updateBugStatusFromAction(
-          bug.bugId,
-          moderatorPatch(payload.user, {
-            jiraKey: issue.key,
-            jiraUrl: issue.url,
-          }),
-          `Для бага *#${bug.bugId}* создана Jira-задача: <${issue.url}|${issue.key}>`
-        );
-      } catch (error) {
-        console.error("Failed to create Jira issue", error);
-        return {
-          response_action: "errors",
-          errors: {
-            jira_summary_block: `Не удалось создать задачу в Jira: ${error.message}`,
-          },
-        };
-      }
-
+          await updateBugStatusFromAction(
+            bug.bugId,
+            moderatorPatch(payload.user, {
+              jiraKey: issue.key,
+              jiraUrl: issue.url,
+            }),
+            `Для бага *#${bug.bugId}* создана Jira-задача: <${issue.url}|${issue.key}>`
+          );
+        } catch (error) {
+          console.error("Failed to create Jira issue", error);
+          await slackClient.chat
+            .postMessage({
+              channel: payload.user.id,
+              text: `Не удалось создать Jira-задачу для бага *#${bug.bugId}*: ${error.message}`,
+            })
+            .catch(() => {});
+        }
+      });
       return { response_action: "clear" };
     }
 

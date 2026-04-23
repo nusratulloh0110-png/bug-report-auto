@@ -29,8 +29,12 @@ const BUG_HEADERS = [
   "Модератор",
   "Продукт",
   "Айди клиники",
+  "Роль пользователя",
   "Приоритет",
   "Раздел",
+  "Шаги воспроизведения",
+  "Ожидаемый результат",
+  "Фактический результат",
   "Описание",
   "Комментарий к файлу",
   "Репортер",
@@ -151,6 +155,20 @@ function normalizeLegacyProduct(product) {
   return LEGACY_PRODUCT_LABELS[normalized] || normalized;
 }
 
+function getSheetColumnCount(title) {
+  if (title === SHEETS.dashboard) {
+    return 8;
+  }
+  if (title === SHEETS.settings || title === SHEETS.moderators || title === SHEETS.products) {
+    return 3;
+  }
+  if (title === SHEETS.system) {
+    return SYSTEM_HEADERS.length;
+  }
+
+  return BUG_HEADERS.length;
+}
+
 function asSheetRow(bug) {
   return [
     bug.bugId,
@@ -160,8 +178,12 @@ function asSheetRow(bug) {
     bug.assignedModeratorName || bug.assignedModeratorId || "",
     bug.product || "",
     bug.clinicId || "",
+    bug.userRole || "",
     formatPriority(bug.priority),
     bug.section || "",
+    bug.reproductionSteps || "",
+    bug.expectedResult || "",
+    bug.actualResult || "",
     bug.description || "",
     bug.attachmentNote || "",
     bug.reporterName || bug.reporterId || "",
@@ -189,16 +211,20 @@ function rowsToBugEntries(rows) {
       moderator: row[4] || "",
       product: normalizeLegacyProduct(row[5] || ""),
       clinicId: row[6] || "",
-      priority: normalizeLegacyPriority(row[7] || ""),
-      section: row[8] || "",
-      description: row[9] || "",
-      attachmentNote: row[10] || "",
-      reporter: row[11] || "",
-      fixedAt: row[12] || "",
-      jiraKey: row[13] || "",
-      jiraUrl: row[14] || "",
-      duplicateOf: row[15] || "",
-      rejectionReason: row[16] || "",
+      userRole: row[7] || "",
+      priority: normalizeLegacyPriority(row[8] || ""),
+      section: row[9] || "",
+      reproductionSteps: row[10] || "",
+      expectedResult: row[11] || "",
+      actualResult: row[12] || "",
+      description: row[13] || "",
+      attachmentNote: row[14] || "",
+      reporter: row[15] || "",
+      fixedAt: row[16] || "",
+      jiraKey: row[17] || "",
+      jiraUrl: row[18] || "",
+      duplicateOf: row[19] || "",
+      rejectionReason: row[20] || "",
     }));
 }
 
@@ -355,7 +381,7 @@ class GoogleSheetsService {
     );
     const requests = [];
 
-    for (const [legacyTitle, normalizedTitle] of Object.entries(LEGACY_SHEET_TITLES)) {
+      for (const [legacyTitle, normalizedTitle] of Object.entries(LEGACY_SHEET_TITLES)) {
       if (byTitle.has(legacyTitle) && !byTitle.has(normalizedTitle)) {
         const properties = byTitle.get(legacyTitle);
         requests.push({
@@ -371,35 +397,42 @@ class GoogleSheetsService {
       }
     }
 
-    for (const title of Object.values(SHEETS)) {
-      if (!byTitle.has(title)) {
-        const columnCount =
-          title === SHEETS.dashboard
-            ? 8
-            : title === SHEETS.settings
-              ? 3
-              : title === SHEETS.moderators
-                ? 3
-                : title === SHEETS.products
-                  ? 3
-                  : title === SHEETS.system
-                    ? SYSTEM_HEADERS.length
-                : BUG_HEADERS.length;
-        requests.push({
-          addSheet: {
-            properties: {
-              title,
-              hidden: title === SHEETS.system,
+      for (const title of Object.values(SHEETS)) {
+        if (!byTitle.has(title)) {
+          const columnCount = getSheetColumnCount(title);
+          requests.push({
+            addSheet: {
+              properties: {
+                title,
+                hidden: title === SHEETS.system,
               gridProperties: {
                 rowCount: title === SHEETS.dashboard ? 80 : 1000,
                 columnCount,
                 frozenRowCount: title === SHEETS.dashboard ? 3 : 1,
               },
             },
-          },
-        });
+            },
+          });
+        } else {
+          const properties = byTitle.get(title);
+          const desiredColumnCount = getSheetColumnCount(title);
+          const currentColumnCount = properties?.gridProperties?.columnCount || 0;
+
+          if (currentColumnCount < desiredColumnCount) {
+            requests.push({
+              updateSheetProperties: {
+                properties: {
+                  sheetId: properties.sheetId,
+                  gridProperties: {
+                    columnCount: desiredColumnCount,
+                  },
+                },
+                fields: "gridProperties.columnCount",
+              },
+            });
+          }
+        }
       }
-    }
 
     if (requests.length > 0) {
       await this.sheetsApi.spreadsheets.batchUpdate({
@@ -429,7 +462,7 @@ class GoogleSheetsService {
   async ensureBugHeaders() {
     await this.sheetsApi.spreadsheets.values.update({
       spreadsheetId: this.spreadsheetId,
-      range: `${SHEETS.bugs}!A1:Q1`,
+      range: `${SHEETS.bugs}!A1:U1`,
       valueInputOption: "RAW",
       requestBody: { values: [BUG_HEADERS] },
     });
@@ -593,7 +626,7 @@ class GoogleSheetsService {
   async migrateLegacyBugRows() {
     const response = await this.sheetsApi.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
-      range: `${SHEETS.bugs}!A2:Q`,
+      range: `${SHEETS.bugs}!A2:U`,
     });
 
     const rows = response.data.values || [];
@@ -612,13 +645,13 @@ class GoogleSheetsService {
       updatedRow[5] = nextProduct;
       updatedRow[7] = nextPriority;
 
-      try {
-        await this.sheetsApi.spreadsheets.values.update({
-          spreadsheetId: this.spreadsheetId,
-          range: `${SHEETS.bugs}!A${index + 2}:Q${index + 2}`,
-          valueInputOption: "RAW",
-          requestBody: { values: [updatedRow] },
-        });
+        try {
+          await this.sheetsApi.spreadsheets.values.update({
+            spreadsheetId: this.spreadsheetId,
+            range: `${SHEETS.bugs}!A${index + 2}:U${index + 2}`,
+            valueInputOption: "RAW",
+            requestBody: { values: [updatedRow] },
+          });
       } catch (error) {
         console.error(`Failed to migrate row ${index + 2}`, error);
       }
@@ -893,7 +926,7 @@ class GoogleSheetsService {
   async getBugRows() {
     const response = await this.sheetsApi.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
-      range: `${SHEETS.bugs}!A2:Q`,
+      range: `${SHEETS.bugs}!A2:U`,
     });
 
     return rowsToBugEntries(response.data.values || []);
@@ -991,20 +1024,20 @@ class GoogleSheetsService {
     };
     let bugRowNumber = existingBugRow;
 
-    if (existingBugRow) {
-      await this.sheetsApi.spreadsheets.values.update({
-        spreadsheetId: this.spreadsheetId,
-        range: `${SHEETS.bugs}!A${existingBugRow}:Q${existingBugRow}`,
-        valueInputOption: "RAW",
-        requestBody: { values: [row] },
-      });
-    } else {
-      await this.sheetsApi.spreadsheets.values.append({
-        spreadsheetId: this.spreadsheetId,
-        range: `${SHEETS.bugs}!A:Q`,
-        valueInputOption: "RAW",
-        insertDataOption: "INSERT_ROWS",
-        requestBody: { values: [row] },
+      if (existingBugRow) {
+        await this.sheetsApi.spreadsheets.values.update({
+          spreadsheetId: this.spreadsheetId,
+          range: `${SHEETS.bugs}!A${existingBugRow}:U${existingBugRow}`,
+          valueInputOption: "RAW",
+          requestBody: { values: [row] },
+        });
+      } else {
+        await this.sheetsApi.spreadsheets.values.append({
+          spreadsheetId: this.spreadsheetId,
+          range: `${SHEETS.bugs}!A:U`,
+          valueInputOption: "RAW",
+          insertDataOption: "INSERT_ROWS",
+          requestBody: { values: [row] },
       });
       bugRowNumber = await this.findBugRow(bug.bugId);
     }
@@ -1064,13 +1097,13 @@ class GoogleSheetsService {
 
     await this.initialize();
 
-    const [visibleResponse, systemResponse] = await Promise.all([
-      this.sheetsApi.spreadsheets.values.get({
-        spreadsheetId: this.spreadsheetId,
-        range: `${SHEETS.bugs}!A2:Q`,
-      }),
-      this.sheetsApi.spreadsheets.values.get({
-        spreadsheetId: this.spreadsheetId,
+      const [visibleResponse, systemResponse] = await Promise.all([
+        this.sheetsApi.spreadsheets.values.get({
+          spreadsheetId: this.spreadsheetId,
+          range: `${SHEETS.bugs}!A2:U`,
+        }),
+        this.sheetsApi.spreadsheets.values.get({
+          spreadsheetId: this.spreadsheetId,
         range: `${SHEETS.system}!A2:N`,
       }),
     ]);
@@ -1090,14 +1123,18 @@ class GoogleSheetsService {
         updatedAt: system.updatedAt || parseDisplayDate(entry.updatedAt)?.toISOString() || new Date().toISOString(),
         status: system.status || "new",
         assignedModeratorId: system.assignedModeratorId || null,
-        assignedModeratorName: system.assignedModeratorName || entry.moderator || null,
-        product: system.product || entry.product || "",
-        clinicId: entry.clinicId || "",
-        priority: system.priority || "",
-        section: entry.section || "",
-        description: entry.description || "",
-        attachmentNote: entry.attachmentNote || "",
-        reporterId: system.reporterId || "",
+          assignedModeratorName: system.assignedModeratorName || entry.moderator || null,
+          product: system.product || entry.product || "",
+          clinicId: entry.clinicId || "",
+          userRole: entry.userRole || "",
+          priority: system.priority || "",
+          section: entry.section || "",
+          reproductionSteps: entry.reproductionSteps || "",
+          expectedResult: entry.expectedResult || "",
+          actualResult: entry.actualResult || "",
+          description: entry.description || "",
+          attachmentNote: entry.attachmentNote || "",
+          reporterId: system.reporterId || "",
         reporterName: system.reporterName || entry.reporter || "",
         fixedAt: system.fixedAt || null,
         jiraKey: entry.jiraKey || "",
