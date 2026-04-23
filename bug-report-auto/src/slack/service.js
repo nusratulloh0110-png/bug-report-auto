@@ -238,11 +238,16 @@ function mentionReporter(bug, message) {
   return `<@${bug.reporterId}> ${message}`;
 }
 
+function getJiraProjectKeyForBug(bug, runtimeConfig) {
+  return runtimeConfig?.jiraProjectKeys?.[bug.product] || config.jiraProjectKey || "";
+}
+
 export const slackService = {
   runtimeConfig: {
     channelId: config.slackBugChannelId,
     moderatorIds: config.slackModeratorIds,
     products: ["ЛИС", "Склад", "Касса"],
+    jiraProjectKeys: {},
   },
 
   async initialize() {
@@ -436,6 +441,32 @@ export const slackService = {
         };
       }
 
+      const jiraProjectKey = extractPlainTextValue(
+        payload.view.state,
+        "jira_project_key_block",
+        "jira_project_key_input"
+      )
+        .trim()
+        .toUpperCase();
+      if (!jiraProjectKey) {
+        return {
+          response_action: "errors",
+          errors: {
+            jira_project_key_block:
+              "Укажите ключ проекта Jira или настройте лист \"Ключ Jira\" в Google Sheets.",
+          },
+        };
+      }
+      if (!/^[A-Z][A-Z0-9_]*$/.test(jiraProjectKey)) {
+        return {
+          response_action: "errors",
+          errors: {
+            jira_project_key_block:
+              "Ключ проекта Jira должен быть латиницей и может содержать только буквы, цифры и _. ",
+          },
+        };
+      }
+
       const summary = extractPlainTextValue(
         payload.view.state,
         "jira_summary_block",
@@ -450,6 +481,7 @@ export const slackService = {
           }
 
           const issue = await jiraClient.createIssueFromBug(bug, {
+            projectKey: jiraProjectKey,
             summary,
             extraContext: note,
             moderatorName: payload.user.username || payload.user.name || payload.user.id,
@@ -568,7 +600,12 @@ export const slackService = {
       }
 
       if (selectedAction === ACTIONS.OPEN_LINK_JIRA_MODAL) {
-        await openModal(payload.trigger_id, buildLinkJiraModal(bug.bugId));
+        await openModal(
+          payload.trigger_id,
+          buildLinkJiraModal(bug.bugId, {
+            projectKey: getJiraProjectKeyForBug(bug, this.runtimeConfig),
+          })
+        );
         return {};
       }
     }
@@ -584,7 +621,12 @@ export const slackService = {
     }
 
     if (action.action_id === ACTIONS.OPEN_LINK_JIRA_MODAL) {
-      await openModal(payload.trigger_id, buildLinkJiraModal(bug.bugId));
+      await openModal(
+        payload.trigger_id,
+        buildLinkJiraModal(bug.bugId, {
+          projectKey: getJiraProjectKeyForBug(bug, this.runtimeConfig),
+        })
+      );
       return {};
     }
 

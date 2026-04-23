@@ -148,7 +148,6 @@ export const jiraClient = {
       config.jiraBaseUrl &&
         config.jiraEmail &&
         config.jiraApiToken &&
-        config.jiraProjectKey &&
         config.jiraIssueTypeName
     );
   },
@@ -162,6 +161,11 @@ export const jiraClient = {
       throw new Error("Интеграция Jira не настроена в переменных окружения.");
     }
 
+    const projectKey = String(options.projectKey || config.jiraProjectKey || "").trim();
+    if (!projectKey) {
+      throw new Error("Не указан ключ проекта Jira.");
+    }
+
     const labels = ["slack-bug-report", normalizeLabel(bug.bugId), normalizeLabel(bug.product)]
       .filter(Boolean)
       .slice(0, 10);
@@ -169,7 +173,7 @@ export const jiraClient = {
     const payload = await jiraRequest("/rest/api/3/issue", {
       fields: {
         project: {
-          key: config.jiraProjectKey,
+          key: projectKey,
         },
         issuetype: {
           name: config.jiraIssueTypeName,

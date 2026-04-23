@@ -84,7 +84,9 @@ export function buildBugReportModal(products = []) {
           type: "plain_text_input",
           action_id: "reproduction_steps_input",
           multiline: true,
-          placeholder: plainText("Например: Нажал сюда -> перешел туда -> появилась ошибка"),
+          placeholder: plainText(
+            "Например: Открыл карточку пациента, нажал Сохранить, после чего появилась ошибка"
+          ),
         },
       },
       {
@@ -95,7 +97,7 @@ export function buildBugReportModal(products = []) {
           type: "plain_text_input",
           action_id: "expected_result_input",
           multiline: true,
-          placeholder: plainText("Что должно было произойти"),
+          placeholder: plainText("Например: Изменения должны были сохраниться без ошибки"),
         },
       },
       {
@@ -106,7 +108,7 @@ export function buildBugReportModal(products = []) {
           type: "plain_text_input",
           action_id: "actual_result_input",
           multiline: true,
-          placeholder: plainText("Что происходит сейчас"),
+          placeholder: plainText("Например: Появляется сообщение об ошибке, и данные не сохраняются"),
         },
       },
       {
@@ -191,7 +193,16 @@ export function buildDuplicateModal(bugId) {
   };
 }
 
-export function buildLinkJiraModal(bugId) {
+export function buildLinkJiraModal(bugId, options = {}) {
+  const projectKeyElement = {
+    type: "plain_text_input",
+    action_id: "jira_project_key_input",
+    placeholder: plainText("Например: LIS, CORE, CASH, ADM"),
+  };
+  if (options.projectKey) {
+    projectKeyElement.initial_value = options.projectKey;
+  }
+
   return {
     type: "modal",
     callback_id: CALLBACKS.LINK_JIRA_MODAL,
@@ -200,6 +211,13 @@ export function buildLinkJiraModal(bugId) {
     submit: plainText("Создать"),
     close: plainText("Отмена"),
     blocks: [
+      {
+        type: "input",
+        block_id: "jira_project_key_block",
+        optional: true,
+        label: plainText("Ключ проекта Jira"),
+        element: projectKeyElement,
+      },
       {
         type: "input",
         block_id: "jira_summary_block",

@@ -9,6 +9,7 @@ const SHEETS = {
   settings: "Настройки",
   moderators: "Модераторы",
   products: "Продукты",
+  jiraKeys: "Ключ Jira",
   system: "Служебные данные",
 };
 
@@ -18,6 +19,7 @@ const LEGACY_SHEET_TITLES = {
   "РќР°СЃС‚СЂРѕР№РєРё": SHEETS.settings,
   "РњРѕРґРµСЂР°С‚РѕСЂС‹": SHEETS.moderators,
   "РџСЂРѕРґСѓРєС‚С‹": SHEETS.products,
+  "РљР»СЋС‡ Jira": SHEETS.jiraKeys,
   "РЎР»СѓР¶РµР±РЅС‹Рµ РґР°РЅРЅС‹Рµ": SHEETS.system,
 };
 
@@ -48,6 +50,7 @@ const BUG_HEADERS = [
 const SETTINGS_HEADERS = ["Ключ", "Значение", "Описание"];
 const MODERATOR_HEADERS = ["Slack ID", "Имя / комментарий", "Активен"];
 const PRODUCT_HEADERS = ["Продукт", "Активен", "Комментарий"];
+const JIRA_KEY_HEADERS = ["Продукт", "Jira Project Key", "Активен", "Комментарий"];
 const SYSTEM_HEADERS = [
   "Bug ID",
   "Reporter ID",
@@ -155,12 +158,52 @@ function normalizeLegacyProduct(product) {
   return LEGACY_PRODUCT_LABELS[normalized] || normalized;
 }
 
+function isLegacyBugRow(row = []) {
+  const priorityColumn = normalizeLegacyPriority(row[7] || "");
+  const newPriorityColumn = normalizeLegacyPriority(row[8] || "");
+
+  return Boolean(row[0]) && Boolean(priorityColumn) && !newPriorityColumn;
+}
+
+function normalizeLegacyBugRow(row = []) {
+  if (!isLegacyBugRow(row)) {
+    return [...row];
+  }
+
+  return [
+    row[0] || "",
+    row[1] || "",
+    row[2] || "",
+    normalizeLegacyStatus(row[3] || ""),
+    row[4] || "",
+    normalizeLegacyProduct(row[5] || ""),
+    row[6] || "",
+    "",
+    normalizeLegacyPriority(row[7] || ""),
+    row[8] || "",
+    "",
+    "",
+    "",
+    row[9] || "",
+    row[10] || "",
+    row[11] || "",
+    row[12] || "",
+    row[13] || "",
+    row[14] || "",
+    row[15] || "",
+    row[16] || "",
+  ];
+}
+
 function getSheetColumnCount(title) {
   if (title === SHEETS.dashboard) {
     return 8;
   }
   if (title === SHEETS.settings || title === SHEETS.moderators || title === SHEETS.products) {
     return 3;
+  }
+  if (title === SHEETS.jiraKeys) {
+    return JIRA_KEY_HEADERS.length;
   }
   if (title === SHEETS.system) {
     return SYSTEM_HEADERS.length;
@@ -203,7 +246,9 @@ function normalizeBoolean(value) {
 function rowsToBugEntries(rows) {
   return rows
     .filter((row) => row[0])
-    .map((row) => ({
+    .map((sourceRow) => {
+      const row = normalizeLegacyBugRow(sourceRow);
+      return {
       bugId: row[0] || "",
       createdAt: row[1] || "",
       updatedAt: row[2] || "",
@@ -225,7 +270,8 @@ function rowsToBugEntries(rows) {
       jiraUrl: row[18] || "",
       duplicateOf: row[19] || "",
       rejectionReason: row[20] || "",
-    }));
+      };
+    });
 }
 
 function asSystemRow(bug) {
@@ -453,6 +499,7 @@ class GoogleSheetsService {
     await this.ensureSettingsSheet();
     await this.ensureModeratorsSheet();
     await this.ensureProductsSheet();
+    await this.ensureJiraKeysSheet();
     await this.ensureSystemSheet();
     await this.migrateLegacyBugRows();
     await this.refreshDashboard();
@@ -614,6 +661,52 @@ class GoogleSheetsService {
     }
   }
 
+  async ensureJiraKeysSheet() {
+    await this.sheetsApi.spreadsheets.values.update({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.jiraKeys}!A1:D1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [JIRA_KEY_HEADERS] },
+    });
+
+    const [productsResponse, jiraKeysResponse] = await Promise.all([
+      this.sheetsApi.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: `${SHEETS.products}!A2:C100`,
+      }),
+      this.sheetsApi.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: `${SHEETS.jiraKeys}!A2:D100`,
+      }),
+    ]);
+
+    const products = (productsResponse.data.values || [])
+      .filter((row) => row[0] && normalizeBoolean(row[1]))
+      .map((row) => row[0]);
+    const existingProducts = new Set(
+      (jiraKeysResponse.data.values || []).map((row) => row[0]).filter(Boolean)
+    );
+
+    const rowsToAdd = products
+      .filter((product) => !existingProducts.has(product))
+      .map((product) => [
+        product,
+        config.jiraProjectKey || "",
+        "TRUE",
+        "Укажите Jira Project Key для этого продукта",
+      ]);
+
+    if (rowsToAdd.length > 0) {
+      await this.sheetsApi.spreadsheets.values.append({
+        spreadsheetId: this.spreadsheetId,
+        range: `${SHEETS.jiraKeys}!A:D`,
+        valueInputOption: "RAW",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: { values: rowsToAdd },
+      });
+    }
+  }
+
   async ensureSystemSheet() {
     await this.sheetsApi.spreadsheets.values.update({
       spreadsheetId: this.spreadsheetId,
@@ -632,31 +725,24 @@ class GoogleSheetsService {
     const rows = response.data.values || [];
     for (let index = 0; index < rows.length; index += 1) {
       const row = rows[index];
-      const nextStatus = normalizeLegacyStatus(row[3] || "");
-      const nextProduct = normalizeLegacyProduct(row[5] || "");
-      const nextPriority = normalizeLegacyPriority(row[7] || "");
+      const updatedRow = normalizeLegacyBugRow(row);
 
-      if (nextStatus === (row[3] || "") && nextProduct === (row[5] || "") && nextPriority === (row[7] || "")) {
+      if (!isLegacyBugRow(row) && updatedRow.every((value, columnIndex) => value === (row[columnIndex] || ""))) {
         continue;
       }
 
-      const updatedRow = [...row];
-      updatedRow[3] = nextStatus;
-      updatedRow[5] = nextProduct;
-      updatedRow[7] = nextPriority;
-
-        try {
-          await this.sheetsApi.spreadsheets.values.update({
-            spreadsheetId: this.spreadsheetId,
-            range: `${SHEETS.bugs}!A${index + 2}:U${index + 2}`,
-            valueInputOption: "RAW",
-            requestBody: { values: [updatedRow] },
-          });
-      } catch (error) {
-        console.error(`Failed to migrate row ${index + 2}`, error);
+      try {
+        await this.sheetsApi.spreadsheets.values.update({
+          spreadsheetId: this.spreadsheetId,
+          range: `${SHEETS.bugs}!A${index + 2}:U${index + 2}`,
+          valueInputOption: "RAW",
+          requestBody: { values: [updatedRow] },
+        });
+        } catch (error) {
+          console.error(`Failed to migrate row ${index + 2}`, error);
+        }
       }
     }
-  }
 
   async applyFormatting() {
     try {
@@ -1163,6 +1249,10 @@ class GoogleSheetsService {
       spreadsheetId: this.spreadsheetId,
       range: `${SHEETS.products}!A2:C100`,
     });
+    const jiraKeysResponse = await this.sheetsApi.spreadsheets.values.get({
+      spreadsheetId: this.spreadsheetId,
+      range: `${SHEETS.jiraKeys}!A2:D100`,
+    });
 
     const settingsMap = new Map(
       (settingsResponse.data.values || [])
@@ -1176,11 +1266,18 @@ class GoogleSheetsService {
     const products = (productResponse.data.values || [])
       .filter((row) => row[0] && normalizeBoolean(row[1]))
       .map((row) => row[0]);
+    const jiraProjectKeys = Object.fromEntries(
+      (jiraKeysResponse.data.values || [])
+        .filter((row) => row[0] && normalizeBoolean(row[2] || "TRUE"))
+        .map((row) => [row[0], (row[1] || "").trim()])
+        .filter(([, jiraKey]) => jiraKey)
+    );
 
     return {
       channelId: settingsMap.get("slack_bug_channel_id") || config.slackBugChannelId,
       moderatorIds: moderatorIds.length > 0 ? moderatorIds : config.slackModeratorIds,
       products: products.length > 0 ? products : ["ЛИС", "Склад", "Касса"],
+      jiraProjectKeys,
       weeklyReportEnabled: normalizeBoolean(settingsMap.get("weekly_report_enabled")),
       weeklyReportTime: settingsMap.get("weekly_report_time") || "09:00",
       weeklyReportTimezone: settingsMap.get("weekly_report_timezone") || config.reportTimezone,
