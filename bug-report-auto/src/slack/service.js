@@ -1,6 +1,7 @@
 ﻿import crypto from "node:crypto";
 import { config } from "../config.js";
 import { googleSheetsService } from "../google/sheets.js";
+import { jiraClient } from "../jira/client.js";
 import { bugStore } from "../store/bug-store.js";
 import { launcherStore } from "../store/launcher-store.js";
 import { buildBugBlocks, buildLauncherBlocks } from "./blocks.js";
@@ -414,24 +415,47 @@ export const slackService = {
     }
 
     if (callbackId === CALLBACKS.LINK_JIRA_MODAL) {
-      const jiraKey = extractPlainTextValue(payload.view.state, "jira_key_block", "jira_key_input");
-      if (!jiraKey) {
+      if (bug.jiraKey) {
         return {
           response_action: "errors",
-          errors: { jira_key_block: "Укажите ключ Jira." },
+          errors: {
+            jira_summary_block: `Для бага уже сохранена Jira-задача: ${bug.jiraKey}`,
+          },
         };
       }
-      const jiraUrl = extractPlainTextValue(payload.view.state, "jira_url_block", "jira_url_input");
-      runInBackground(() =>
-        updateBugStatusFromAction(
+
+      const summary = extractPlainTextValue(
+        payload.view.state,
+        "jira_summary_block",
+        "jira_summary_input"
+      );
+      const note = extractPlainTextValue(payload.view.state, "jira_note_block", "jira_note_input");
+
+      try {
+        const issue = await jiraClient.createIssueFromBug(bug, {
+          summary,
+          extraContext: note,
+          moderatorName: payload.user.username || payload.user.name || payload.user.id,
+        });
+
+        await updateBugStatusFromAction(
           bug.bugId,
           moderatorPatch(payload.user, {
-            jiraKey,
-            jiraUrl: jiraUrl || null,
+            jiraKey: issue.key,
+            jiraUrl: issue.url,
           }),
-          `Для бага *#${bug.bugId}* сохранена связь с Jira: ${jiraKey}`
-        )
-      );
+          `Для бага *#${bug.bugId}* создана Jira-задача: <${issue.url}|${issue.key}>`
+        );
+      } catch (error) {
+        console.error("Failed to create Jira issue", error);
+        return {
+          response_action: "errors",
+          errors: {
+            jira_summary_block: `Не удалось создать задачу в Jira: ${error.message}`,
+          },
+        };
+      }
+
       return { response_action: "clear" };
     }
 

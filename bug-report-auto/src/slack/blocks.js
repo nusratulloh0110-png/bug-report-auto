@@ -40,7 +40,7 @@ function buildNewBugActions(bug) {
             value: encodeActionValue({ bugId: bug.bugId, action: ACTIONS.OPEN_DUPLICATE_MODAL }),
           },
           {
-            text: plainText("Связать с Jira"),
+            text: plainText("Создать в Jira"),
             value: encodeActionValue({ bugId: bug.bugId, action: ACTIONS.OPEN_LINK_JIRA_MODAL }),
           },
         ],

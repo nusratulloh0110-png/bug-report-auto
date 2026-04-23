@@ -32,4 +32,9 @@ export const config = {
   googleProjectId: process.env.GOOGLE_PROJECT_ID || "",
   reportTimezone: process.env.REPORT_TIMEZONE || "Asia/Tashkent",
   internalApiToken: process.env.INTERNAL_API_TOKEN || "",
+  jiraBaseUrl: (process.env.JIRA_BASE_URL || "").replace(/\/+$/, ""),
+  jiraEmail: process.env.JIRA_EMAIL || "",
+  jiraApiToken: process.env.JIRA_API_TOKEN || "",
+  jiraProjectKey: process.env.JIRA_PROJECT_KEY || "",
+  jiraIssueTypeName: process.env.JIRA_ISSUE_TYPE_NAME || "Bug",
 };
