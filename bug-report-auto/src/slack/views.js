@@ -194,13 +194,39 @@ export function buildDuplicateModal(bugId) {
 }
 
 export function buildLinkJiraModal(bugId, options = {}) {
-  const projectKeyElement = {
-    type: "plain_text_input",
-    action_id: "jira_project_key_input",
-    placeholder: plainText("Например: LIS, CORE, CASH, ADM"),
-  };
-  if (options.projectKey) {
-    projectKeyElement.initial_value = options.projectKey;
+  const projectOptions = (options.jiraProjects || [])
+    .filter((project) => project.key)
+    .slice(0, 100)
+    .map((project) => ({
+      text: plainText(`${project.name || project.key} (${project.key})`.slice(0, 75)),
+      value: project.key,
+    }));
+  const selectedProjectOption = projectOptions.find((option) => option.value === options.projectKey);
+  const projectKeyElement =
+    projectOptions.length > 0
+      ? {
+          type: "static_select",
+          action_id: "jira_project_key_select",
+          placeholder: plainText("Выберите Jira проект"),
+          options: projectOptions,
+          ...(selectedProjectOption ? { initial_option: selectedProjectOption } : {}),
+        }
+      : {
+          type: "plain_text_input",
+          action_id: "jira_project_key_input",
+          placeholder: plainText("Например: LIS, CORE, CASH, ADM"),
+          ...(options.projectKey ? { initial_value: options.projectKey } : {}),
+        };
+
+  if (projectOptions.length > 0 && !selectedProjectOption && options.projectKey) {
+    projectKeyElement.options = [
+      {
+        text: plainText(options.projectKey),
+        value: options.projectKey,
+      },
+      ...projectKeyElement.options,
+    ].slice(0, 100);
+    projectKeyElement.initial_option = projectKeyElement.options[0];
   }
 
   return {

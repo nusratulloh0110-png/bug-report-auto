@@ -239,7 +239,30 @@ function mentionReporter(bug, message) {
 }
 
 function getJiraProjectKeyForBug(bug, runtimeConfig) {
-  return runtimeConfig?.jiraProjectKeys?.[bug.product] || config.jiraProjectKey || "";
+  const configuredKey = runtimeConfig?.jiraProjectKeys?.[bug.product] || config.jiraProjectKey || "";
+  if (configuredKey) {
+    return configuredKey;
+  }
+
+  const normalizedProduct = String(bug.product || "").trim().toLowerCase();
+  const project = (runtimeConfig?.jiraProjects || []).find((candidate) => {
+    const key = String(candidate.key || "").trim().toLowerCase();
+    const name = String(candidate.name || "").trim().toLowerCase();
+    return key === normalizedProduct || name === normalizedProduct;
+  });
+
+  return project?.key || "";
+}
+
+function buildJiraModalOptions(bug, runtimeConfig) {
+  return {
+    projectKey: getJiraProjectKeyForBug(bug, runtimeConfig),
+    jiraProjects: runtimeConfig?.jiraProjects || [],
+  };
+}
+
+function isReadyForJiraStatusSync(bug) {
+  return bug.jiraKey && bug.status !== "fixed" && bug.status !== "rejected" && bug.status !== "duplicate";
 }
 
 export const slackService = {
@@ -248,6 +271,7 @@ export const slackService = {
     moderatorIds: config.slackModeratorIds,
     products: ["ЛИС", "Склад", "Касса"],
     jiraProjectKeys: {},
+    jiraProjects: [],
   },
 
   async initialize() {
@@ -266,6 +290,14 @@ export const slackService = {
     }
 
     this.runtimeConfig = await googleSheetsService.getRuntimeConfig();
+    if (jiraClient.isConfigured()) {
+      try {
+        this.runtimeConfig.jiraProjects = await jiraClient.listProjects();
+      } catch (error) {
+        console.error("Failed to load Jira projects", error);
+        this.runtimeConfig.jiraProjects = this.runtimeConfig.jiraProjects || [];
+      }
+    }
     return this.runtimeConfig;
   },
 
@@ -445,10 +477,15 @@ export const slackService = {
         payload.view.state,
         "jira_project_key_block",
         "jira_project_key_input"
-      )
+      ) || extractStaticValue(
+        payload.view.state,
+        "jira_project_key_block",
+        "jira_project_key_select"
+      );
+      const normalizedJiraProjectKey = jiraProjectKey
         .trim()
         .toUpperCase();
-      if (!jiraProjectKey) {
+      if (!normalizedJiraProjectKey) {
         return {
           response_action: "errors",
           errors: {
@@ -457,7 +494,7 @@ export const slackService = {
           },
         };
       }
-      if (!/^[A-Z][A-Z0-9_]*$/.test(jiraProjectKey)) {
+      if (!/^[A-Z][A-Z0-9_]*$/.test(normalizedJiraProjectKey)) {
         return {
           response_action: "errors",
           errors: {
@@ -481,7 +518,7 @@ export const slackService = {
           }
 
           const issue = await jiraClient.createIssueFromBug(bug, {
-            projectKey: jiraProjectKey,
+            projectKey: normalizedJiraProjectKey,
             summary,
             extraContext: note,
             moderatorName: payload.user.username || payload.user.name || payload.user.id,
@@ -602,9 +639,7 @@ export const slackService = {
       if (selectedAction === ACTIONS.OPEN_LINK_JIRA_MODAL) {
         await openModal(
           payload.trigger_id,
-          buildLinkJiraModal(bug.bugId, {
-            projectKey: getJiraProjectKeyForBug(bug, this.runtimeConfig),
-          })
+          buildLinkJiraModal(bug.bugId, buildJiraModalOptions(bug, this.runtimeConfig))
         );
         return {};
       }
@@ -623,9 +658,7 @@ export const slackService = {
     if (action.action_id === ACTIONS.OPEN_LINK_JIRA_MODAL) {
       await openModal(
         payload.trigger_id,
-        buildLinkJiraModal(bug.bugId, {
-          projectKey: getJiraProjectKeyForBug(bug, this.runtimeConfig),
-        })
+        buildLinkJiraModal(bug.bugId, buildJiraModalOptions(bug, this.runtimeConfig))
       );
       return {};
     }
@@ -649,6 +682,38 @@ export const slackService = {
     });
 
     await this.postTextToRuntimeChannel(text);
+  },
+
+  async syncJiraStatuses() {
+    if (!jiraClient.isConfigured()) {
+      return { checked: 0, updated: 0 };
+    }
+
+    const linkedBugs = bugStore.list().filter(isReadyForJiraStatusSync);
+    let updated = 0;
+
+    for (const bug of linkedBugs) {
+      try {
+        const jiraStatus = await jiraClient.getIssueStatus(bug.jiraKey);
+        if (!jiraClient.isDoneStatus(jiraStatus)) {
+          continue;
+        }
+
+        await updateBugStatusFromAction(
+          bug.bugId,
+          {
+            status: "fixed",
+            fixedAt: new Date().toISOString(),
+          },
+          `Статус бага *#${bug.bugId}* автоматически обновлен: Jira-задача *${bug.jiraKey}* перешла в статус *${jiraStatus.name}*.`
+        );
+        updated += 1;
+      } catch (error) {
+        console.error(`Failed to sync Jira status for ${bug.bugId}`, error);
+      }
+    }
+
+    return { checked: linkedBugs.length, updated };
   },
 
   async postTextToRuntimeChannel(text) {

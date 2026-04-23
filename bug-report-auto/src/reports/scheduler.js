@@ -94,3 +94,27 @@ export function startWeeklyReportScheduler(slackService, googleSheetsService, lo
   });
   return timer;
 }
+
+export function startJiraStatusSyncScheduler(slackService, logger) {
+  const intervalMs = 5 * 60 * 1000;
+
+  async function tick() {
+    try {
+      const result = await slackService.syncJiraStatuses();
+      if (result.updated > 0) {
+        logger?.info?.(result, "Jira statuses synced");
+      }
+    } catch (error) {
+      logger?.error?.(
+        { message: error.message, stack: error.stack },
+        "Jira status sync scheduler failed"
+      );
+    }
+  }
+
+  const timer = setInterval(tick, intervalMs);
+  tick().catch((error) => {
+    logger?.error?.({ message: error.message, stack: error.stack }, "Initial Jira sync failed");
+  });
+  return timer;
+}

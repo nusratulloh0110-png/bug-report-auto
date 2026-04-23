@@ -142,6 +142,20 @@ async function jiraRequest(path, body) {
   throw new Error(errorText);
 }
 
+function normalizeStatusName(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isDoneStatus(status) {
+  const name = normalizeStatusName(status?.name);
+  const categoryKey = normalizeStatusName(status?.statusCategory?.key);
+
+  return (
+    categoryKey === "done" ||
+    ["готово", "done", "закрыто", "закрыт", "resolved", "выполнено"].includes(name)
+  );
+}
+
 export const jiraClient = {
   isConfigured() {
     return Boolean(
@@ -192,6 +206,51 @@ export const jiraClient = {
       url: this.getIssueUrl(payload.key),
       id: payload.id,
     };
+  },
+
+  async getIssueStatus(issueKey) {
+    if (!this.isConfigured()) {
+      throw new Error("РРЅС‚РµРіСЂР°С†РёСЏ Jira РЅРµ РЅР°СЃС‚СЂРѕРµРЅР° РІ РїРµСЂРµРјРµРЅРЅС‹С… РѕРєСЂСѓР¶РµРЅРёСЏ.");
+    }
+
+    const payload = await jiraRequest(
+      `/rest/api/3/issue/${encodeURIComponent(issueKey)}?fields=status`,
+    );
+
+    return payload.fields?.status || null;
+  },
+
+  isDoneStatus,
+
+  async listProjects() {
+    if (!this.isConfigured()) {
+      return [];
+    }
+
+    const projects = [];
+    let startAt = 0;
+    const maxResults = 50;
+
+    while (projects.length < 100) {
+      const payload = await jiraRequest(
+        `/rest/api/3/project/search?startAt=${startAt}&maxResults=${maxResults}&orderBy=key`
+      );
+      const values = payload.values || [];
+      projects.push(
+        ...values.map((project) => ({
+          key: project.key,
+          name: project.name,
+        }))
+      );
+
+      if (payload.isLast || values.length === 0) {
+        break;
+      }
+
+      startAt += values.length;
+    }
+
+    return projects.filter((project) => project.key);
   },
 
   async validateConnection() {
