@@ -1067,6 +1067,12 @@ class GoogleSheetsService {
   }
 
   async findBugRow(bugId) {
+    if (!this.enabled) {
+      return null;
+    }
+
+    await this.initialize();
+
     const response = await this.sheetsApi.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
       range: `${SHEETS.bugs}!A2:A`,
@@ -1078,6 +1084,12 @@ class GoogleSheetsService {
   }
 
   async findSystemRow(bugId) {
+    if (!this.enabled) {
+      return null;
+    }
+
+    await this.initialize();
+
     const response = await this.sheetsApi.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
       range: `${SHEETS.system}!A2:A`,

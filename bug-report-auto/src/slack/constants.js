@@ -5,6 +5,7 @@ export const ACTIONS = {
   OPEN_REJECT_MODAL: "open_reject_modal",
   OPEN_DUPLICATE_MODAL: "open_duplicate_modal",
   OPEN_LINK_JIRA_MODAL: "open_link_jira_modal",
+  OPEN_JIRA_URL: "open_jira_url",
   MODERATOR_MORE: "moderator_more",
 };
 

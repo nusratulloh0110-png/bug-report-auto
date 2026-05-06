@@ -11,6 +11,47 @@ function buildProductOptions(products = []) {
   }));
 }
 
+function normalizeJiraProjectKey(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function buildProjectOption(project, fallbackKey = "") {
+  const key = normalizeJiraProjectKey(project?.key || fallbackKey);
+  const name = String(project?.name || "").trim();
+  const label = name ? `${name} (${key})` : key;
+
+  return {
+    text: plainText(label.slice(0, 75)),
+    value: key,
+  };
+}
+
+function buildJiraProjectOptions(projects = [], selectedProjectKey = "") {
+  const selectedKey = normalizeJiraProjectKey(selectedProjectKey);
+  const optionsByKey = new Map();
+  const selectedProject = projects.find(
+    (project) => normalizeJiraProjectKey(project.key) === selectedKey
+  );
+
+  if (selectedKey && projects.length > 0) {
+    optionsByKey.set(selectedKey, buildProjectOption(selectedProject, selectedKey));
+  }
+
+  for (const project of projects) {
+    const key = normalizeJiraProjectKey(project.key);
+    if (!key || optionsByKey.has(key)) {
+      continue;
+    }
+
+    optionsByKey.set(key, buildProjectOption(project));
+    if (optionsByKey.size >= 100) {
+      break;
+    }
+  }
+
+  return Array.from(optionsByKey.values());
+}
+
 export function buildBugReportModal(products = []) {
   return {
     type: "modal",
@@ -194,14 +235,10 @@ export function buildDuplicateModal(bugId) {
 }
 
 export function buildLinkJiraModal(bugId, options = {}) {
-  const projectOptions = (options.jiraProjects || [])
-    .filter((project) => project.key)
-    .slice(0, 100)
-    .map((project) => ({
-      text: plainText(`${project.name || project.key} (${project.key})`.slice(0, 75)),
-      value: project.key,
-    }));
-  const selectedProjectOption = projectOptions.find((option) => option.value === options.projectKey);
+  const selectedProjectKey = normalizeJiraProjectKey(options.projectKey);
+  const mappedProjectKey = normalizeJiraProjectKey(options.mappedProjectKey);
+  const projectOptions = buildJiraProjectOptions(options.jiraProjects || [], selectedProjectKey);
+  const selectedProjectOption = projectOptions.find((option) => option.value === selectedProjectKey);
   const projectKeyElement =
     projectOptions.length > 0
       ? {
@@ -215,24 +252,13 @@ export function buildLinkJiraModal(bugId, options = {}) {
           type: "plain_text_input",
           action_id: "jira_project_key_input",
           placeholder: plainText("Например: LIS, CORE, CASH, ADM"),
-          ...(options.projectKey ? { initial_value: options.projectKey } : {}),
+          ...(selectedProjectKey ? { initial_value: selectedProjectKey } : {}),
         };
-
-  if (projectOptions.length > 0 && !selectedProjectOption && options.projectKey) {
-    projectKeyElement.options = [
-      {
-        text: plainText(options.projectKey),
-        value: options.projectKey,
-      },
-      ...projectKeyElement.options,
-    ].slice(0, 100);
-    projectKeyElement.initial_option = projectKeyElement.options[0];
-  }
 
   return {
     type: "modal",
     callback_id: CALLBACKS.LINK_JIRA_MODAL,
-    private_metadata: JSON.stringify({ bugId }),
+    private_metadata: JSON.stringify({ bugId, defaultProjectKey: selectedProjectKey }),
     title: plainText("Создать в Jira"),
     submit: plainText("Создать"),
     close: plainText("Отмена"),
@@ -242,6 +268,11 @@ export function buildLinkJiraModal(bugId, options = {}) {
         block_id: "jira_project_key_block",
         optional: true,
         label: plainText("Ключ проекта Jira"),
+        hint: plainText(
+          mappedProjectKey
+            ? `По маппингу продукта выбран ${mappedProjectKey}. Можно выбрать другой проект.`
+            : "Выберите проект из Jira или укажите ключ вручную."
+        ),
         element: projectKeyElement,
       },
       {

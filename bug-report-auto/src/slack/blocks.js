@@ -1,5 +1,7 @@
 import { ACTIONS } from "./constants.js";
 import { encodeActionValue, formatDisplayDate, plainText } from "./helpers.js";
+import { sanitizeBugPersonalData } from "../privacy/sanitize.js";
+import { jiraClient } from "../jira/client.js";
 
 const STATUS_LABELS = {
   new: "Новый",
@@ -16,7 +18,34 @@ const PRIORITY_LABELS = {
   low: "Низкий",
 };
 
+function buildJiraActionButton(bug) {
+  const jiraUrl = bug.jiraUrl || (bug.jiraKey ? jiraClient.getIssueUrl(bug.jiraKey) : "");
+
+  if (jiraUrl) {
+    return {
+      type: "button",
+      action_id: ACTIONS.OPEN_JIRA_URL,
+      text: plainText("Открыть в Jira"),
+      url: jiraUrl,
+      value: encodeActionValue({ bugId: bug.bugId }),
+    };
+  }
+
+  if (bug.jiraKey) {
+    return null;
+  }
+
+  return {
+    type: "button",
+    action_id: ACTIONS.OPEN_LINK_JIRA_MODAL,
+    text: plainText("Создать в Jira"),
+    value: encodeActionValue({ bugId: bug.bugId }),
+  };
+}
+
 function buildNewBugActions(bug) {
+  const jiraButton = buildJiraActionButton(bug);
+
   return {
     type: "actions",
     elements: [
@@ -27,6 +56,7 @@ function buildNewBugActions(bug) {
         style: "primary",
         value: encodeActionValue({ bugId: bug.bugId }),
       },
+      ...(jiraButton ? [jiraButton] : []),
       {
         type: "overflow",
         action_id: ACTIONS.MODERATOR_MORE,
@@ -39,10 +69,6 @@ function buildNewBugActions(bug) {
             text: plainText("Дубликат"),
             value: encodeActionValue({ bugId: bug.bugId, action: ACTIONS.OPEN_DUPLICATE_MODAL }),
           },
-          {
-            text: plainText("Создать в Jira"),
-            value: encodeActionValue({ bugId: bug.bugId, action: ACTIONS.OPEN_LINK_JIRA_MODAL }),
-          },
         ],
       },
     ],
@@ -50,6 +76,8 @@ function buildNewBugActions(bug) {
 }
 
 function buildTriageActions(bug) {
+  const jiraButton = buildJiraActionButton(bug);
+
   return {
     type: "actions",
     elements: [
@@ -60,6 +88,7 @@ function buildTriageActions(bug) {
         style: "primary",
         value: encodeActionValue({ bugId: bug.bugId }),
       },
+      ...(jiraButton ? [jiraButton] : []),
     ],
   };
 }
@@ -69,6 +98,8 @@ function formatMultiline(text) {
 }
 
 export function buildBugBlocks(bug) {
+  bug = sanitizeBugPersonalData(bug).bug;
+
   const jiraText = bug.jiraKey
     ? bug.jiraUrl
       ? `<${bug.jiraUrl}|${bug.jiraKey}>`

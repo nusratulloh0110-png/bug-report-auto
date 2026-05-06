@@ -167,6 +167,10 @@ export const jiraClient = {
   },
 
   getIssueUrl(issueKey) {
+    if (!config.jiraBaseUrl || !issueKey) {
+      return "";
+    }
+
     return `${config.jiraBaseUrl}/browse/${issueKey}`;
   },
 
@@ -210,7 +214,7 @@ export const jiraClient = {
 
   async getIssueStatus(issueKey) {
     if (!this.isConfigured()) {
-      throw new Error("РРЅС‚РµРіСЂР°С†РёСЏ Jira РЅРµ РЅР°СЃС‚СЂРѕРµРЅР° РІ РїРµСЂРµРјРµРЅРЅС‹С… РѕРєСЂСѓР¶РµРЅРёСЏ.");
+      throw new Error("Интеграция Jira не настроена в переменных окружения.");
     }
 
     const payload = await jiraRequest(
@@ -251,6 +255,33 @@ export const jiraClient = {
     }
 
     return projects.filter((project) => project.key);
+  },
+
+  async listProjectsSupportingIssueType(issueTypeName = config.jiraIssueTypeName) {
+    const projects = await this.listProjects();
+    const supportedProjects = [];
+
+    for (const project of projects) {
+      try {
+        const payload = await jiraRequest(
+          `/rest/api/3/issue/createmeta?projectKeys=${encodeURIComponent(
+            project.key
+          )}&expand=projects.issuetypes`
+        );
+        const issueTypes = payload.projects?.[0]?.issuetypes || [];
+        const supportsIssueType = issueTypes.some(
+          (issueType) => issueType.name === issueTypeName
+        );
+
+        if (supportsIssueType) {
+          supportedProjects.push(project);
+        }
+      } catch (error) {
+        console.error(`Failed to load Jira issue types for ${project.key}`, error);
+      }
+    }
+
+    return supportedProjects;
   },
 
   async validateConnection() {

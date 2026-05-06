@@ -2,6 +2,7 @@
 import { config } from "../config.js";
 import { googleSheetsService } from "../google/sheets.js";
 import { jiraClient } from "../jira/client.js";
+import { sanitizeBugPersonalData } from "../privacy/sanitize.js";
 import { bugStore } from "../store/bug-store.js";
 import { launcherStore } from "../store/launcher-store.js";
 import { buildBugBlocks, buildLauncherBlocks } from "./blocks.js";
@@ -238,25 +239,58 @@ function mentionReporter(bug, message) {
   return `<@${bug.reporterId}> ${message}`;
 }
 
-function getJiraProjectKeyForBug(bug, runtimeConfig) {
-  const configuredKey = runtimeConfig?.jiraProjectKeys?.[bug.product] || config.jiraProjectKey || "";
-  if (configuredKey) {
-    return configuredKey;
+function buildPersonalDataRemovedNotice() {
+  return (
+    "Из-за требований информационной безопасности персональные данные, включая ПИНФЛ и номера телефонов, " +
+    "нельзя публиковать в общих каналах. Такие данные были удалены из карточки бага. " +
+    "Если они необходимы для диагностики, передайте их через согласованный защищенный канал."
+  );
+}
+
+function normalizeJiraProjectKey(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function getMappedJiraProjectKeyForBug(bug, runtimeConfig) {
+  const normalizedProduct = String(bug.product || "").trim().toLowerCase();
+  const mappedEntry = Object.entries(runtimeConfig?.jiraProjectKeys || {}).find(
+    ([product]) => String(product || "").trim().toLowerCase() === normalizedProduct
+  );
+
+  return normalizeJiraProjectKey(mappedEntry?.[1]);
+}
+
+function findJiraProjectByProduct(bug, runtimeConfig) {
+  const normalizedProduct = String(bug.product || "").trim().toLowerCase();
+  if (!normalizedProduct) {
+    return null;
   }
 
-  const normalizedProduct = String(bug.product || "").trim().toLowerCase();
-  const project = (runtimeConfig?.jiraProjects || []).find((candidate) => {
+  return (runtimeConfig?.jiraProjects || []).find((candidate) => {
     const key = String(candidate.key || "").trim().toLowerCase();
     const name = String(candidate.name || "").trim().toLowerCase();
     return key === normalizedProduct || name === normalizedProduct;
   });
+}
 
-  return project?.key || "";
+function getJiraProjectKeyForBug(bug, runtimeConfig) {
+  const mappedKey = getMappedJiraProjectKeyForBug(bug, runtimeConfig);
+  if (mappedKey) {
+    return mappedKey;
+  }
+
+  const matchedProject = findJiraProjectByProduct(bug, runtimeConfig);
+  if (matchedProject?.key) {
+    return normalizeJiraProjectKey(matchedProject.key);
+  }
+
+  return normalizeJiraProjectKey(config.jiraProjectKey);
 }
 
 function buildJiraModalOptions(bug, runtimeConfig) {
   return {
     projectKey: getJiraProjectKeyForBug(bug, runtimeConfig),
+    mappedProjectKey: getMappedJiraProjectKeyForBug(bug, runtimeConfig),
     jiraProjects: runtimeConfig?.jiraProjects || [],
   };
 }
@@ -285,14 +319,13 @@ export const slackService = {
   },
 
   async refreshRuntimeConfig() {
-    if (!googleSheetsService.enabled) {
-      return this.runtimeConfig;
+    if (googleSheetsService.enabled) {
+      this.runtimeConfig = await googleSheetsService.getRuntimeConfig();
     }
 
-    this.runtimeConfig = await googleSheetsService.getRuntimeConfig();
     if (jiraClient.isConfigured()) {
       try {
-        this.runtimeConfig.jiraProjects = await jiraClient.listProjects();
+        this.runtimeConfig.jiraProjects = await jiraClient.listProjectsSupportingIssueType();
       } catch (error) {
         console.error("Failed to load Jira projects", error);
         this.runtimeConfig.jiraProjects = this.runtimeConfig.jiraProjects || [];
@@ -365,13 +398,19 @@ export const slackService = {
         try {
           await this.refreshRuntimeConfig();
           await googleSheetsService.ensureFreshSequence(bugStore);
-          const bug = bugStore.create(normalizeBugFromSubmission(payload.view, payload.user));
+          const sanitized = sanitizeBugPersonalData(
+            normalizeBugFromSubmission(payload.view, payload.user)
+          );
+          const bug = bugStore.create(sanitized.bug);
           const publishedBug = await publishBugCard(bug, this.runtimeConfig.channelId);
 
           await notifyInThread(
             publishedBug,
             `Баг зарегистрирован как *#${publishedBug.bugId}*. Если нужно, прикрепите сюда скриншоты, видео или файлы отдельным сообщением в этот тред.`
           );
+          if (sanitized.removed) {
+            await notifyInThread(publishedBug, buildPersonalDataRemovedNotice());
+          }
         } catch (error) {
           console.error("Failed to create bug", error);
           if (reporterId) {
@@ -481,10 +520,8 @@ export const slackService = {
         payload.view.state,
         "jira_project_key_block",
         "jira_project_key_select"
-      );
-      const normalizedJiraProjectKey = jiraProjectKey
-        .trim()
-        .toUpperCase();
+      ) || metadata.defaultProjectKey || "";
+      const normalizedJiraProjectKey = normalizeJiraProjectKey(jiraProjectKey);
       if (!normalizedJiraProjectKey) {
         return {
           response_action: "errors",
@@ -583,6 +620,10 @@ export const slackService = {
       };
     }
 
+    if (action.action_id === ACTIONS.OPEN_JIRA_URL) {
+      return {};
+    }
+
     await this.refreshRuntimeConfig();
     ensureModerator(payload.user.id, this.runtimeConfig.moderatorIds);
 
@@ -676,10 +717,13 @@ export const slackService = {
     const now = new Date();
     const startDate = new Date(now);
     startDate.setDate(now.getDate() - (kind === "monthly" ? 30 : 7));
-    const text = await googleSheetsService.buildReportSummary({
+    const range = {
       startDate,
       endDate: now,
-    });
+    };
+    const text = googleSheetsService.enabled
+      ? await googleSheetsService.buildReportSummary(range)
+      : buildInMemoryReportSummary(bugStore.list(), range);
 
     await this.postTextToRuntimeChannel(text);
   },
