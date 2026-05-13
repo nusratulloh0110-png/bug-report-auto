@@ -36,5 +36,6 @@ export const config = {
   jiraEmail: process.env.JIRA_EMAIL || "",
   jiraApiToken: process.env.JIRA_API_TOKEN || "",
   jiraProjectKey: process.env.JIRA_PROJECT_KEY || "",
+  jiraIssueTypeId: process.env.JIRA_ISSUE_TYPE_ID || "",
   jiraIssueTypeName: process.env.JIRA_ISSUE_TYPE_NAME || "Bug",
 };

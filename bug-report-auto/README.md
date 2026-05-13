@@ -47,6 +47,7 @@
 
 - проект по `JIRA_PROJECT_KEY`
 - тип задачи по `JIRA_ISSUE_TYPE_NAME`
+- если задан `JIRA_ISSUE_TYPE_ID`, тип задачи отправляется по ID вместо названия
 - summary
 - description с основными полями бага
 - ссылки `jiraKey` и `jiraUrl` сохраняются обратно в Slack карточку и Google Sheets

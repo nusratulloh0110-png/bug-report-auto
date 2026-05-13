@@ -106,11 +106,68 @@ function buildSummary(bug, summaryOverride = "") {
   return parts.slice(0, 255) || `Баг из Slack ${bug.bugId}`;
 }
 
+function normalizeName(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function uniqueMessages(messages) {
+  return Array.from(new Set(messages.map((message) => String(message || "").trim()).filter(Boolean)));
+}
+
+function translateJiraMessage(message) {
+  const text = String(message || "").trim();
+  if (!text) {
+    return "";
+  }
+
+  if (/指定有效的事务类型|specify a valid issue type/i.test(text)) {
+    return `Jira не приняла тип задачи "${config.jiraIssueTypeName}". Проверьте JIRA_ISSUE_TYPE_NAME/JIRA_ISSUE_TYPE_ID и убедитесь, что этот тип доступен в выбранном проекте.`;
+  }
+
+  const chineseProjectMatch = text.match(/没有找到有密钥[“"]([^”"]+)[”"]的项目/);
+  if (chineseProjectMatch) {
+    return `Jira не видит проект с ключом "${chineseProjectMatch[1]}". Проверьте ключ проекта и права API-пользователя.`;
+  }
+
+  if (/No project could be found with key/i.test(text)) {
+    return `${text} Проверьте ключ проекта и права API-пользователя.`;
+  }
+
+  if (
+    /您无法在此项目中创建事务|cannot create.*(?:issue|transaction).*project|не можете создавать задачи.*проект/i.test(
+      text
+    )
+  ) {
+    return "У API-пользователя Jira нет права создавать задачи в выбранном проекте.";
+  }
+
+  if (/未获得执行此操作的授权|not authorized|permission|нет прав.*выполн/i.test(text)) {
+    return "Jira не авторизовала API-пользователя для этого действия. Проверьте email/API token и права проекта.";
+  }
+
+  return text;
+}
+
+function buildJiraErrorText(response, payload) {
+  const messages = [
+    ...(Array.isArray(payload?.errorMessages) ? payload.errorMessages : []),
+    ...Object.values(payload?.errors || {}),
+  ];
+  const translated = uniqueMessages(messages.map(translateJiraMessage));
+
+  if (translated.length > 0) {
+    return translated.join(" ");
+  }
+
+  return `Ошибка Jira API: статус ${response.status}.`;
+}
+
 async function jiraRequest(path, body) {
   const response = await fetch(`${config.jiraBaseUrl}${path}`, {
     method: body ? "POST" : "GET",
     headers: {
       Accept: "application/json",
+      "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
       "Content-Type": "application/json",
       Authorization: `Basic ${Buffer.from(
         `${config.jiraEmail}:${config.jiraApiToken}`
@@ -124,22 +181,50 @@ async function jiraRequest(path, body) {
     return response.json();
   }
 
-  let errorText = `Ошибка Jira API: статус ${response.status}.`;
-
+  let payload = null;
   try {
-    const payload = await response.json();
-    const messages = [
-      ...(Array.isArray(payload.errorMessages) ? payload.errorMessages : []),
-      ...Object.values(payload.errors || {}),
-    ].filter(Boolean);
-    if (messages.length > 0) {
-      errorText = messages.join(" ");
-    }
+    payload = await response.json();
   } catch {
-    // Ignore non-JSON error bodies.
+    throw new Error(`Ошибка Jira API: статус ${response.status}.`);
   }
 
-  throw new Error(errorText);
+  throw new Error(buildJiraErrorText(response, payload));
+}
+
+async function resolveIssueTypeForProject(projectKey) {
+  if (config.jiraIssueTypeId) {
+    return { id: config.jiraIssueTypeId };
+  }
+
+  const payload = await jiraRequest(
+    `/rest/api/3/issue/createmeta/${encodeURIComponent(projectKey)}/issuetypes`
+  );
+  const issueTypes = payload.issueTypes || [];
+  if (issueTypes.length === 0) {
+    throw new Error(
+      `Jira не вернула доступные типы задач для проекта "${projectKey}". Проверьте ключ проекта и права API-пользователя на создание задач.`
+    );
+  }
+
+  const expected = normalizeName(config.jiraIssueTypeName);
+  const issueType = issueTypes.find((candidate) => {
+    return (
+      normalizeName(candidate.name) === expected ||
+      normalizeName(candidate.untranslatedName) === expected
+    );
+  });
+
+  if (!issueType) {
+    const available = issueTypes
+      .map((candidate) => candidate.name || candidate.untranslatedName)
+      .filter(Boolean)
+      .join(", ");
+    throw new Error(
+      `В проекте "${projectKey}" нет типа задачи "${config.jiraIssueTypeName}". Доступные типы: ${available || "не найдены"}.`
+    );
+  }
+
+  return { id: issueType.id };
 }
 
 function normalizeStatusName(value) {
@@ -183,6 +268,7 @@ export const jiraClient = {
     if (!projectKey) {
       throw new Error("Не указан ключ проекта Jira.");
     }
+    const issueType = await resolveIssueTypeForProject(projectKey);
 
     const labels = ["slack-bug-report", normalizeLabel(bug.bugId), normalizeLabel(bug.product)]
       .filter(Boolean)
@@ -193,9 +279,7 @@ export const jiraClient = {
         project: {
           key: projectKey,
         },
-        issuetype: {
-          name: config.jiraIssueTypeName,
-        },
+        issuetype: issueType,
         summary: buildSummary(bug, options.summary),
         description: buildDescriptionDocument(bug, {
           moderatorName: options.moderatorName,
