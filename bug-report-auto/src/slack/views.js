@@ -52,7 +52,49 @@ function buildJiraProjectOptions(projects = [], selectedProjectKey = "") {
   return Array.from(optionsByKey.values());
 }
 
-export function buildBugReportModal(products = []) {
+function buildAttachmentBlocks(includeFileInput) {
+  const fileBlock = includeFileInput
+    ? {
+        type: "input",
+        block_id: "attachments_block",
+        optional: true,
+        label: plainText("Фото и файлы"),
+        hint: plainText("Прикрепите до 10 файлов. После отправки бот добавит их в тред бага."),
+        element: {
+          type: "file_input",
+          action_id: "attachments_input",
+          max_files: 10,
+        },
+      }
+    : {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text:
+            "*Фото и файлы*\nПоле прикрепления файлов выключено в настройках сервиса. После добавления Slack scopes `files:read` и `files:write` включите `SLACK_FILE_INPUT_ENABLED=true`.",
+        },
+      };
+
+  return [
+    fileBlock,
+    {
+      type: "input",
+      block_id: "attachment_note_block",
+      optional: true,
+      label: plainText("Комментарий к вложению"),
+      element: {
+        type: "plain_text_input",
+        action_id: "attachment_note_input",
+        multiline: true,
+        placeholder: plainText("Что приложите: скрин, видео, лог, документ"),
+      },
+    },
+  ];
+}
+
+export function buildBugReportModal(products = [], options = {}) {
+  const includeFileInput = options.includeFileInput === true;
+
   return {
     type: "modal",
     callback_id: CALLBACKS.BUG_CREATE_MODAL,
@@ -163,26 +205,7 @@ export function buildBugReportModal(products = []) {
           placeholder: plainText("Дополнительный контекст, детали и комментарии"),
         },
       },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text:
-            "*Фото и файлы*\nПосле отправки формы бот создаст карточку бага. Скриншоты и файлы можно будет прикрепить сообщением в тред к этой карточке.",
-        },
-      },
-      {
-        type: "input",
-        block_id: "attachment_note_block",
-        optional: true,
-        label: plainText("Комментарий к вложению"),
-        element: {
-          type: "plain_text_input",
-          action_id: "attachment_note_input",
-          multiline: true,
-          placeholder: plainText("Что приложите: скрин, видео, лог, документ"),
-        },
-      },
+      ...buildAttachmentBlocks(includeFileInput),
     ],
   };
 }

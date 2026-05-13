@@ -10,6 +10,15 @@ function required(name) {
   return value;
 }
 
+function booleanEnv(name, defaultValue = false) {
+  const value = process.env[name];
+  if (value == null || value === "") {
+    return defaultValue;
+  }
+
+  return ["true", "1", "yes", "y"].includes(String(value).trim().toLowerCase());
+}
+
 export const config = {
   port: Number(process.env.PORT || 3000),
   slackAppId: process.env.SLACK_APP_ID || "",
@@ -19,6 +28,7 @@ export const config = {
   slackBotToken: required("SLACK_BOT_TOKEN"),
   slackSigningSecret: required("SLACK_SIGNING_SECRET"),
   slackBugChannelId: required("SLACK_BUG_CHANNEL_ID"),
+  slackFileInputEnabled: booleanEnv("SLACK_FILE_INPUT_ENABLED", true),
   slackModeratorIds: (process.env.SLACK_MODERATOR_IDS || "")
     .split(",")
     .map((value) => value.trim())

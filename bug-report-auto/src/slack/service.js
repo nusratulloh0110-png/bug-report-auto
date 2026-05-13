@@ -10,6 +10,7 @@ import { slackClient } from "./client.js";
 import { ACTIONS, CALLBACKS } from "./constants.js";
 import {
   decodeActionValue,
+  extractFileIds,
   extractPlainTextValue,
   extractSelectedOptionValue,
   extractStaticValue,
@@ -91,6 +92,10 @@ function normalizeBugFromSubmission(view, user) {
   };
 }
 
+function normalizeAttachmentFileIds(view) {
+  return extractFileIds(view.state, "attachments_block", "attachments_input");
+}
+
 function moderatorPatch(user, extra = {}) {
   return {
     assignedModeratorId: user.id,
@@ -169,6 +174,15 @@ async function openModal(triggerId, view) {
     trigger_id: triggerId,
     view,
   });
+}
+
+async function openBugReportModal(triggerId, products) {
+  await openModal(
+    triggerId,
+    buildBugReportModal(products, { includeFileInput: config.slackFileInputEnabled })
+  );
+
+  return { fileInputEnabled: config.slackFileInputEnabled };
 }
 
 async function warmLauncherStore() {
@@ -272,6 +286,57 @@ function findJiraProjectByProduct(bug, runtimeConfig) {
     const name = String(candidate.name || "").trim().toLowerCase();
     return key === normalizedProduct || name === normalizedProduct;
   });
+}
+
+function formatFileLink(file) {
+  const title = file?.title || file?.name || file?.id || "файл";
+  const url = file?.permalink || file?.url_private || "";
+  return url ? `<${url}|${title}>` : title;
+}
+
+async function getFileInfo(fileId) {
+  try {
+    const response = await slackClient.files.info({ file: fileId });
+    return response.file || { id: fileId };
+  } catch (error) {
+    console.error(`Failed to load Slack file info for ${fileId}`, error);
+    return { id: fileId };
+  }
+}
+
+async function shareAttachedFilesInThread(bug, fileIds) {
+  if (!bug.channelId || !bug.threadTs || fileIds.length === 0) {
+    return;
+  }
+
+  const unsharedFileIds = [];
+  for (const fileId of fileIds) {
+    try {
+      await slackClient.apiCall("files.share", {
+        file: fileId,
+        channels: bug.channelId,
+        thread_ts: bug.threadTs,
+      });
+    } catch (error) {
+      console.error(`Failed to share Slack file ${fileId}`, error);
+      unsharedFileIds.push(fileId);
+    }
+  }
+
+  if (unsharedFileIds.length === 0) {
+    return;
+  }
+
+  const files = await Promise.all(unsharedFileIds.map(getFileInfo));
+  const fileLinks = files.map(formatFileLink).filter(Boolean);
+  if (fileLinks.length === 0) {
+    return;
+  }
+
+  await notifyInThread(
+    bug,
+    [`Прикрепленные к форме файлы:`, ...fileLinks.map((link) => `• ${link}`)].join("\n")
+  );
 }
 
 function getJiraProjectKeyForBug(bug, runtimeConfig) {
@@ -394,12 +459,14 @@ export const slackService = {
       };
     }
 
-    await openModal(command.trigger_id, buildBugReportModal(this.runtimeConfig.products));
+    const modalResult = await openBugReportModal(command.trigger_id, this.runtimeConfig.products);
     runInBackground(() => this.refreshRuntimeConfig());
 
     return {
       response_type: "ephemeral",
-      text: "Форма создания бага открыта.",
+      text: modalResult.fileInputEnabled
+        ? "Форма создания бага открыта."
+        : "Форма создания бага открыта без поля прикрепления файлов: включите `SLACK_FILE_INPUT_ENABLED=true` после добавления Slack scopes.",
     };
   },
 
@@ -442,13 +509,15 @@ export const slackService = {
           const sanitized = sanitizeBugPersonalData(
             normalizeBugFromSubmission(payload.view, payload.user)
           );
+          const attachmentFileIds = normalizeAttachmentFileIds(payload.view);
           const bug = bugStore.create(sanitized.bug);
           const publishedBug = await publishBugCard(bug, this.runtimeConfig.channelId);
 
           await notifyInThread(
             publishedBug,
-            `Баг зарегистрирован как *#${publishedBug.bugId}*. Если нужно, прикрепите сюда скриншоты, видео или файлы отдельным сообщением в этот тред.`
+            `Баг зарегистрирован как *#${publishedBug.bugId}*.`
           );
+          await shareAttachedFilesInThread(publishedBug, attachmentFileIds);
           if (sanitized.removed) {
             await notifyInThread(publishedBug, mentionReporter(publishedBug, buildPersonalDataRemovedNotice()));
           }
@@ -636,7 +705,7 @@ export const slackService = {
     }
     
     if (action.action_id === ACTIONS.OPEN_BUG_MODAL) {
-      await openModal(payload.trigger_id, buildBugReportModal(this.runtimeConfig.products));
+      await openBugReportModal(payload.trigger_id, this.runtimeConfig.products);
       runInBackground(() => this.refreshRuntimeConfig());
       return {};
     }

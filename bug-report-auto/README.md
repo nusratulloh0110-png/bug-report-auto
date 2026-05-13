@@ -36,6 +36,10 @@
 - `chat:write.public`
 - `channels:read`
 - `groups:read`
+- `files:read`
+- `files:write`
+
+Поле прикрепления файлов включено по умолчанию и требует `files:read`/`files:write`. После добавления scopes переустановите Slack app в workspace и перезапустите сервис. Если нужно временно отключить поле, установите `SLACK_FILE_INPUT_ENABLED=false`.
 
 ## Jira
 
