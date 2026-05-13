@@ -28,7 +28,9 @@ export const config = {
   slackBotToken: required("SLACK_BOT_TOKEN"),
   slackSigningSecret: required("SLACK_SIGNING_SECRET"),
   slackBugChannelId: required("SLACK_BUG_CHANNEL_ID"),
-  slackFileInputEnabled: booleanEnv("SLACK_FILE_INPUT_ENABLED", false),
+  slackFileInputEnabled:
+    booleanEnv("SLACK_FILE_INPUT_ENABLED", false) &&
+    booleanEnv("SLACK_FILE_INPUT_SCOPES_READY", false),
   slackModeratorIds: (process.env.SLACK_MODERATOR_IDS || "")
     .split(",")
     .map((value) => value.trim())

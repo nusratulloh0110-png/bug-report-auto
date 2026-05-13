@@ -39,7 +39,7 @@
 - `files:read`
 - `files:write`
 
-Для поля прикрепления файлов в форме добавьте `files:read` и `files:write`, переустановите Slack app в workspace, затем установите `SLACK_FILE_INPUT_ENABLED=true` и перезапустите сервис. Без этого флага форма откроется без поля загрузки файлов, чтобы Slack не отклонял модалку.
+Для поля прикрепления файлов в форме добавьте `files:read` и `files:write`, переустановите Slack app в workspace, затем установите `SLACK_FILE_INPUT_ENABLED=true` и `SLACK_FILE_INPUT_SCOPES_READY=true`, после чего перезапустите сервис. Без этих флагов форма откроется без поля загрузки файлов, чтобы Slack не отклонял модалку.
 
 ## Jira
 
