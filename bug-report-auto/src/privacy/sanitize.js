@@ -2,6 +2,8 @@ const PINFL_REGEX = /(^|[^\d])((?:\d[ \t.-]*){13}\d)(?!\d)/g;
 const PHONE_WITH_COUNTRY_REGEX = /(^|[^\d+])(\+?998[ \t().-]*(?:\d[ \t().-]*){8}\d)(?!\d)/g;
 const LOCAL_PHONE_REGEX =
   /(^|[^\d])(\(?(?:33|50|55|71|77|88|90|91|93|94|95|97|98|99)\)?[ \t().-]*(?:\d[ \t().-]*){6}\d)(?!\d)/g;
+const PASSPORT_REGEX = /(^|[^A-Za-zА-Яа-яЁё\d])([A-ZА-ЯЁ]{2}[ \t.-]*(?:\d[ \t.-]*){6}\d)(?![A-Za-zА-Яа-яЁё\d])/giu;
+const METRIC_REGEX = /(^|[^A-Za-zА-Яа-яЁё\d])((?:I|І|1)[ \t.-]*-[ \t.-]*TN[ \t.-]*(?:\d[ \t.-]*){5}\d)(?![A-Za-zА-Яа-яЁё\d])/giu;
 
 const BUG_TEXT_FIELDS = [
   "clinicId",
@@ -56,6 +58,8 @@ export function sanitizePersonalDataText(value) {
     [PINFL_REGEX, (digits) => digits.length === 14],
     [PHONE_WITH_COUNTRY_REGEX, (digits) => digits.length === 12 && digits.startsWith("998")],
     [LOCAL_PHONE_REGEX, (digits) => digits.length === 9],
+    [PASSPORT_REGEX, (digits) => digits.length === 7],
+    [METRIC_REGEX, (digits) => digits.length === 6],
   ]) {
     const result = removeMatches(next, regex, predicate);
     next = result.value;
