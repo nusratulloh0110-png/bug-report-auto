@@ -176,6 +176,33 @@ async function openModal(triggerId, view) {
   });
 }
 
+function isMissingFileInputScopeError(error) {
+  const messages = [
+    error?.message,
+    error?.data?.error,
+    ...(error?.data?.response_metadata?.messages || []),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return messages.includes("file_input") && messages.includes("files:read");
+}
+
+async function openBugReportModal(triggerId, products) {
+  try {
+    await openModal(triggerId, buildBugReportModal(products));
+    return { fileInputEnabled: true };
+  } catch (error) {
+    if (!isMissingFileInputScopeError(error)) {
+      throw error;
+    }
+
+    console.warn("Slack file_input is unavailable because files:read scope is missing");
+    await openModal(triggerId, buildBugReportModal(products, { includeFileInput: false }));
+    return { fileInputEnabled: false };
+  }
+}
+
 async function warmLauncherStore() {
   if (!googleSheetsService.enabled) {
     return;
@@ -451,11 +478,13 @@ export const slackService = {
       };
     }
 
-    await openModal(command.trigger_id, buildBugReportModal(this.runtimeConfig.products));
+    const modalResult = await openBugReportModal(command.trigger_id, this.runtimeConfig.products);
 
     return {
       response_type: "ephemeral",
-      text: "Форма создания бага открыта.",
+      text: modalResult.fileInputEnabled
+        ? "Форма создания бага открыта."
+        : "Форма создания бага открыта без поля прикрепления файлов: добавьте scope `files:read` и переустановите Slack app.",
     };
   },
 
@@ -695,7 +724,7 @@ export const slackService = {
     
     if (action.action_id === ACTIONS.OPEN_BUG_MODAL) {
       await this.refreshRuntimeConfig();
-      await openModal(payload.trigger_id, buildBugReportModal(this.runtimeConfig.products));
+      await openBugReportModal(payload.trigger_id, this.runtimeConfig.products);
       return {};
     }
 

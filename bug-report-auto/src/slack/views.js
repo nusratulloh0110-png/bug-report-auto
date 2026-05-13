@@ -52,7 +52,49 @@ function buildJiraProjectOptions(projects = [], selectedProjectKey = "") {
   return Array.from(optionsByKey.values());
 }
 
-export function buildBugReportModal(products = []) {
+function buildAttachmentBlocks(includeFileInput) {
+  const fileBlock = includeFileInput
+    ? {
+        type: "input",
+        block_id: "attachments_block",
+        optional: true,
+        label: plainText("Фото и файлы"),
+        hint: plainText("Прикрепите до 10 файлов. После отправки бот добавит их в тред бага."),
+        element: {
+          type: "file_input",
+          action_id: "attachments_input",
+          max_files: 10,
+        },
+      }
+    : {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text:
+            "*Фото и файлы*\nПрикрепление файлов в форме временно недоступно: в Slack app нужно добавить scope `files:read` и переустановить приложение. До этого прикрепите файлы отдельным сообщением в тред после создания бага.",
+        },
+      };
+
+  return [
+    fileBlock,
+    {
+      type: "input",
+      block_id: "attachment_note_block",
+      optional: true,
+      label: plainText("Комментарий к файлам"),
+      element: {
+        type: "plain_text_input",
+        action_id: "attachment_note_input",
+        multiline: true,
+        placeholder: plainText("Коротко опишите прикрепленные файлы"),
+      },
+    },
+  ];
+}
+
+export function buildBugReportModal(products = [], options = {}) {
+  const includeFileInput = options.includeFileInput !== false;
+
   return {
     type: "modal",
     callback_id: CALLBACKS.BUG_CREATE_MODAL,
@@ -163,30 +205,7 @@ export function buildBugReportModal(products = []) {
           placeholder: plainText("Дополнительный контекст, детали и комментарии"),
         },
       },
-      {
-        type: "input",
-        block_id: "attachments_block",
-        optional: true,
-        label: plainText("Фото и файлы"),
-        hint: plainText("Прикрепите до 10 файлов. После отправки бот добавит их в тред бага."),
-        element: {
-          type: "file_input",
-          action_id: "attachments_input",
-          max_files: 10,
-        },
-      },
-      {
-        type: "input",
-        block_id: "attachment_note_block",
-        optional: true,
-        label: plainText("Комментарий к файлам"),
-        element: {
-          type: "plain_text_input",
-          action_id: "attachment_note_input",
-          multiline: true,
-          placeholder: plainText("Коротко опишите прикрепленные файлы"),
-        },
-      },
+      ...buildAttachmentBlocks(includeFileInput),
     ],
   };
 }
