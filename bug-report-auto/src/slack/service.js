@@ -288,11 +288,51 @@ function getJiraProjectKeyForBug(bug, runtimeConfig) {
   return normalizeJiraProjectKey(config.jiraProjectKey);
 }
 
+function buildJiraProjectChoices(runtimeConfig) {
+  const choicesByKey = new Map();
+
+  for (const project of runtimeConfig?.jiraProjects || []) {
+    const key = normalizeJiraProjectKey(project.key);
+    if (!key || choicesByKey.has(key)) {
+      continue;
+    }
+
+    choicesByKey.set(key, {
+      key,
+      name: String(project.name || "").trim(),
+    });
+  }
+
+  for (const [product, projectKey] of Object.entries(runtimeConfig?.jiraProjectKeys || {})) {
+    const key = normalizeJiraProjectKey(projectKey);
+    if (!key) {
+      continue;
+    }
+
+    if (!choicesByKey.has(key)) {
+      choicesByKey.set(key, {
+        key,
+        name: String(product || "").trim(),
+      });
+    }
+  }
+
+  const defaultKey = normalizeJiraProjectKey(config.jiraProjectKey);
+  if (defaultKey && !choicesByKey.has(defaultKey)) {
+    choicesByKey.set(defaultKey, {
+      key: defaultKey,
+      name: "по умолчанию",
+    });
+  }
+
+  return Array.from(choicesByKey.values());
+}
+
 function buildJiraModalOptions(bug, runtimeConfig) {
   return {
     projectKey: getJiraProjectKeyForBug(bug, runtimeConfig),
     mappedProjectKey: getMappedJiraProjectKeyForBug(bug, runtimeConfig),
-    jiraProjects: runtimeConfig?.jiraProjects || [],
+    jiraProjects: buildJiraProjectChoices(runtimeConfig),
   };
 }
 
@@ -326,7 +366,7 @@ export const slackService = {
 
     if (jiraClient.isConfigured()) {
       try {
-        this.runtimeConfig.jiraProjects = await jiraClient.listProjectsSupportingIssueType();
+        this.runtimeConfig.jiraProjects = await jiraClient.listProjects();
       } catch (error) {
         console.error("Failed to load Jira projects", error);
         this.runtimeConfig.jiraProjects = this.runtimeConfig.jiraProjects || [];

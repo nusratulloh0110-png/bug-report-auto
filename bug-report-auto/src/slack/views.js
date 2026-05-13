@@ -18,7 +18,7 @@ function normalizeJiraProjectKey(value) {
 function buildProjectOption(project, fallbackKey = "") {
   const key = normalizeJiraProjectKey(project?.key || fallbackKey);
   const name = String(project?.name || "").trim();
-  const label = name ? `${name} (${key})` : key;
+  const label = name ? `${key} (${name})` : key;
 
   return {
     text: plainText(label.slice(0, 75)),
@@ -244,7 +244,7 @@ export function buildLinkJiraModal(bugId, options = {}) {
       ? {
           type: "static_select",
           action_id: "jira_project_key_select",
-          placeholder: plainText("Выберите Jira проект"),
+          placeholder: plainText("Выберите ключ Jira"),
           options: projectOptions,
           ...(selectedProjectOption ? { initial_option: selectedProjectOption } : {}),
         }
@@ -254,6 +254,11 @@ export function buildLinkJiraModal(bugId, options = {}) {
           placeholder: plainText("Например: LIS, CORE, CASH, ADM"),
           ...(selectedProjectKey ? { initial_value: selectedProjectKey } : {}),
         };
+  const projectHint = mappedProjectKey
+    ? `По маппингу продукта выбран ${mappedProjectKey}. Можно выбрать другой проект.`
+    : projectOptions.length > 0
+      ? "Выберите ключ Jira из списка."
+      : "Не удалось загрузить список ключей Jira. Укажите ключ вручную.";
 
   return {
     type: "modal",
@@ -268,11 +273,7 @@ export function buildLinkJiraModal(bugId, options = {}) {
         block_id: "jira_project_key_block",
         optional: true,
         label: plainText("Ключ проекта Jira"),
-        hint: plainText(
-          mappedProjectKey
-            ? `По маппингу продукта выбран ${mappedProjectKey}. Можно выбрать другой проект.`
-            : "Выберите проект из Jira или укажите ключ вручную."
-        ),
+        hint: plainText(projectHint),
         element: projectKeyElement,
       },
       {
