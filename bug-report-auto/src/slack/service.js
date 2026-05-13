@@ -447,9 +447,8 @@ export const slackService = {
   },
 
   async handleSlashCommand(command) {
-    await this.refreshRuntimeConfig();
-
     if (command.command === "/report") {
+      await this.refreshRuntimeConfig();
       return this.handleReportCommand(command);
     }
 
@@ -461,6 +460,7 @@ export const slackService = {
     }
 
     const modalResult = await openBugReportModal(command.trigger_id, this.runtimeConfig.products);
+    runInBackground(() => this.refreshRuntimeConfig());
 
     return {
       response_type: "ephemeral",
@@ -705,8 +705,8 @@ export const slackService = {
     }
     
     if (action.action_id === ACTIONS.OPEN_BUG_MODAL) {
-      await this.refreshRuntimeConfig();
       await openBugReportModal(payload.trigger_id, this.runtimeConfig.products);
+      runInBackground(() => this.refreshRuntimeConfig());
       return {};
     }
 
