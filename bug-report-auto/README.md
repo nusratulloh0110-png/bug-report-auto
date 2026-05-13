@@ -36,6 +36,8 @@
 - `chat:write.public`
 - `channels:read`
 - `groups:read`
+- `files:read`
+- `files:write`
 
 ## Jira
 

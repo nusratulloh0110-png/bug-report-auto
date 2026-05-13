@@ -164,23 +164,27 @@ export function buildBugReportModal(products = []) {
         },
       },
       {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text:
-            "*Фото и файлы*\nПосле отправки формы бот создаст карточку бага. Скриншоты и файлы можно будет прикрепить сообщением в тред к этой карточке.",
+        type: "input",
+        block_id: "attachments_block",
+        optional: true,
+        label: plainText("Фото и файлы"),
+        hint: plainText("Прикрепите до 10 файлов. После отправки бот добавит их в тред бага."),
+        element: {
+          type: "file_input",
+          action_id: "attachments_input",
+          max_files: 10,
         },
       },
       {
         type: "input",
         block_id: "attachment_note_block",
         optional: true,
-        label: plainText("Комментарий к вложению"),
+        label: plainText("Комментарий к файлам"),
         element: {
           type: "plain_text_input",
           action_id: "attachment_note_input",
           multiline: true,
-          placeholder: plainText("Что приложите: скрин, видео, лог, документ"),
+          placeholder: plainText("Коротко опишите прикрепленные файлы"),
         },
       },
     ],
