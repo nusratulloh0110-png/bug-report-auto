@@ -28,19 +28,6 @@ export function extractStaticValue(viewState, blockId, actionId) {
   );
 }
 
-export function extractFileIds(viewState, blockId, actionId) {
-  const input = viewState.values?.[blockId]?.[actionId] || {};
-  const files = Array.isArray(input.files)
-    ? input.files
-    : Array.isArray(input.value)
-      ? input.value
-      : [];
-
-  return files
-    .map((file) => (typeof file === "string" ? file : file?.id))
-    .filter(Boolean);
-}
-
 export function encodeActionValue(payload) {
   return JSON.stringify(payload);
 }
