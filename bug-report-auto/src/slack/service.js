@@ -176,31 +176,13 @@ async function openModal(triggerId, view) {
   });
 }
 
-function isMissingFileInputScopeError(error) {
-  const messages = [
-    error?.message,
-    error?.data?.error,
-    ...(error?.data?.response_metadata?.messages || []),
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  return messages.includes("file_input") && messages.includes("files:read");
-}
-
 async function openBugReportModal(triggerId, products) {
-  try {
-    await openModal(triggerId, buildBugReportModal(products));
-    return { fileInputEnabled: true };
-  } catch (error) {
-    if (!isMissingFileInputScopeError(error)) {
-      throw error;
-    }
+  await openModal(
+    triggerId,
+    buildBugReportModal(products, { includeFileInput: config.slackFileInputEnabled })
+  );
 
-    console.warn("Slack file_input is unavailable because files:read scope is missing");
-    await openModal(triggerId, buildBugReportModal(products, { includeFileInput: false }));
-    return { fileInputEnabled: false };
-  }
+  return { fileInputEnabled: config.slackFileInputEnabled };
 }
 
 async function warmLauncherStore() {
