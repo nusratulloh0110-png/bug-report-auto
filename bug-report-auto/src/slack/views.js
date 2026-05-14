@@ -52,6 +52,43 @@ function buildJiraProjectOptions(projects = [], selectedProjectKey = "") {
   return Array.from(optionsByKey.values());
 }
 
+function buildIssueTypeOption(issueType) {
+  const id = String(issueType?.id || "").trim();
+  const name = String(issueType?.name || issueType?.untranslatedName || "").trim();
+  const label = name || id;
+
+  return {
+    text: plainText(label.slice(0, 75)),
+    value: id,
+  };
+}
+
+function buildJiraIssueTypeOptions(issueTypes = [], selectedIssueTypeId = "") {
+  const selectedId = String(selectedIssueTypeId || "").trim();
+  const optionsById = new Map();
+  const selectedIssueType = issueTypes.find(
+    (issueType) => String(issueType.id || "").trim() === selectedId
+  );
+
+  if (selectedId && selectedIssueType) {
+    optionsById.set(selectedId, buildIssueTypeOption(selectedIssueType));
+  }
+
+  for (const issueType of issueTypes) {
+    const id = String(issueType.id || "").trim();
+    if (!id || optionsById.has(id)) {
+      continue;
+    }
+
+    optionsById.set(id, buildIssueTypeOption(issueType));
+    if (optionsById.size >= 100) {
+      break;
+    }
+  }
+
+  return Array.from(optionsById.values());
+}
+
 function buildAttachmentBlocks(includeFileInput) {
   const fileBlock = includeFileInput
     ? {
@@ -262,6 +299,13 @@ export function buildLinkJiraModal(bugId, options = {}) {
   const mappedProjectKey = normalizeJiraProjectKey(options.mappedProjectKey);
   const projectOptions = buildJiraProjectOptions(options.jiraProjects || [], selectedProjectKey);
   const selectedProjectOption = projectOptions.find((option) => option.value === selectedProjectKey);
+  const issueTypeOptions = buildJiraIssueTypeOptions(
+    options.jiraIssueTypes || [],
+    options.issueTypeId
+  );
+  const selectedIssueTypeOption = issueTypeOptions.find(
+    (option) => option.value === String(options.issueTypeId || "").trim()
+  );
   const projectKeyElement =
     projectOptions.length > 0
       ? {
@@ -282,6 +326,27 @@ export function buildLinkJiraModal(bugId, options = {}) {
     : projectOptions.length > 0
       ? "Выберите ключ Jira из списка."
       : "Не удалось загрузить список ключей Jira. Укажите ключ вручную.";
+  const issueTypeElement =
+    issueTypeOptions.length > 0
+      ? {
+          type: "static_select",
+          action_id: "jira_issue_type_select",
+          placeholder: plainText("Выберите тип задачи"),
+          options: issueTypeOptions,
+          ...(selectedIssueTypeOption ? { initial_option: selectedIssueTypeOption } : {}),
+        }
+      : {
+          type: "plain_text_input",
+          action_id: "jira_issue_type_input",
+          placeholder: plainText("Например: Bug, Task, Клиент"),
+          ...(options.issueTypeName ? { initial_value: options.issueTypeName } : {}),
+        };
+  const issueTypeHint =
+    issueTypeOptions.length > 0
+      ? `Типы загружены из проекта ${selectedProjectKey}.`
+      : options.issueTypesError
+        ? `Не удалось загрузить типы задач проекта ${selectedProjectKey}: ${options.issueTypesError}`
+        : "Не удалось загрузить типы задач. Укажите тип вручную.";
 
   return {
     type: "modal",
@@ -294,10 +359,18 @@ export function buildLinkJiraModal(bugId, options = {}) {
       {
         type: "input",
         block_id: "jira_project_key_block",
+        dispatch_action: projectOptions.length > 0,
         optional: true,
         label: plainText("Ключ проекта Jira"),
         hint: plainText(projectHint),
         element: projectKeyElement,
+      },
+      {
+        type: "input",
+        block_id: "jira_issue_type_block",
+        label: plainText("Тип задачи Jira"),
+        hint: plainText(issueTypeHint),
+        element: issueTypeElement,
       },
       {
         type: "input",

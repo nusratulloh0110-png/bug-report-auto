@@ -121,7 +121,7 @@ function translateJiraMessage(message) {
   }
 
   if (/指定有效的事务类型|specify a valid issue type/i.test(text)) {
-    return `Jira не приняла тип задачи "${config.jiraIssueTypeName}". Проверьте JIRA_ISSUE_TYPE_NAME/JIRA_ISSUE_TYPE_ID и убедитесь, что этот тип доступен в выбранном проекте.`;
+    return "Jira не приняла выбранный тип задачи. Проверьте, что этот тип доступен в выбранном проекте.";
   }
 
   const chineseProjectMatch = text.match(/没有找到有密钥[“"]([^”"]+)[”"]的项目/);
@@ -191,28 +191,51 @@ async function jiraRequest(path, body) {
   throw new Error(buildJiraErrorText(response, payload));
 }
 
-async function resolveIssueTypeForProject(projectKey) {
-  if (config.jiraIssueTypeId) {
-    return { id: config.jiraIssueTypeId };
-  }
+function normalizeIssueType(issueType) {
+  return {
+    id: String(issueType?.id || "").trim(),
+    name: String(issueType?.name || "").trim(),
+    untranslatedName: String(issueType?.untranslatedName || "").trim(),
+    description: String(issueType?.description || "").trim(),
+  };
+}
 
+async function listIssueTypesForProject(projectKey) {
   const payload = await jiraRequest(
     `/rest/api/3/issue/createmeta/${encodeURIComponent(projectKey)}/issuetypes`
   );
-  const issueTypes = payload.issueTypes || [];
+
+  return (payload.issueTypes || [])
+    .map(normalizeIssueType)
+    .filter((issueType) => issueType.id && issueType.name);
+}
+
+async function resolveIssueTypeForProject(projectKey, options = {}) {
+  const requestedIssueTypeId = String(options.issueTypeId || "").trim();
+  if (requestedIssueTypeId) {
+    return { id: requestedIssueTypeId };
+  }
+
+  const issueTypes = await listIssueTypesForProject(projectKey);
   if (issueTypes.length === 0) {
     throw new Error(
       `Jira не вернула доступные типы задач для проекта "${projectKey}". Проверьте ключ проекта и права API-пользователя на создание задач.`
     );
   }
 
-  const expected = normalizeName(config.jiraIssueTypeName);
-  const issueType = issueTypes.find((candidate) => {
+  const requestedIssueTypeName = String(options.issueTypeName || "").trim();
+  const configuredIssueTypeId = String(config.jiraIssueTypeId || "").trim();
+  const expected = normalizeName(requestedIssueTypeName || config.jiraIssueTypeName);
+  let issueType = issueTypes.find((candidate) => {
     return (
       normalizeName(candidate.name) === expected ||
       normalizeName(candidate.untranslatedName) === expected
     );
   });
+
+  if (!issueType && !requestedIssueTypeName && configuredIssueTypeId) {
+    issueType = issueTypes.find((candidate) => String(candidate.id || "").trim() === configuredIssueTypeId);
+  }
 
   if (!issueType) {
     const available = issueTypes
@@ -220,7 +243,7 @@ async function resolveIssueTypeForProject(projectKey) {
       .filter(Boolean)
       .join(", ");
     throw new Error(
-      `В проекте "${projectKey}" нет типа задачи "${config.jiraIssueTypeName}". Доступные типы: ${available || "не найдены"}.`
+      `В проекте "${projectKey}" нет типа задачи "${options.issueTypeName || config.jiraIssueTypeName}". Доступные типы: ${available || "не найдены"}.`
     );
   }
 
@@ -268,7 +291,10 @@ export const jiraClient = {
     if (!projectKey) {
       throw new Error("Не указан ключ проекта Jira.");
     }
-    const issueType = await resolveIssueTypeForProject(projectKey);
+    const issueType = await resolveIssueTypeForProject(projectKey, {
+      issueTypeId: options.issueTypeId,
+      issueTypeName: options.issueTypeName,
+    });
 
     const labels = ["slack-bug-report", normalizeLabel(bug.bugId), normalizeLabel(bug.product)]
       .filter(Boolean)
@@ -339,6 +365,19 @@ export const jiraClient = {
     }
 
     return projects.filter((project) => project.key);
+  },
+
+  async listIssueTypesForProject(projectKey) {
+    if (!this.isConfigured()) {
+      return [];
+    }
+
+    const normalizedProjectKey = String(projectKey || "").trim();
+    if (!normalizedProjectKey) {
+      return [];
+    }
+
+    return listIssueTypesForProject(normalizedProjectKey);
   },
 
   async listProjectsSupportingIssueType(issueTypeName = config.jiraIssueTypeName) {

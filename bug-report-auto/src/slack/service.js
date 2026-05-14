@@ -393,11 +393,75 @@ function buildJiraProjectChoices(runtimeConfig) {
   return Array.from(choicesByKey.values());
 }
 
-function buildJiraModalOptions(bug, runtimeConfig) {
+function normalizeJiraIssueTypeId(value) {
+  return String(value || "").trim();
+}
+
+function findPreferredJiraIssueType(issueTypes, options = {}) {
+  const requestedId = normalizeJiraIssueTypeId(options.issueTypeId);
+  if (requestedId) {
+    const byId = issueTypes.find(
+      (issueType) => normalizeJiraIssueTypeId(issueType.id) === requestedId
+    );
+    if (byId) {
+      return byId;
+    }
+  }
+
+  const configuredId = normalizeJiraIssueTypeId(config.jiraIssueTypeId);
+  if (configuredId) {
+    const byConfiguredId = issueTypes.find(
+      (issueType) => normalizeJiraIssueTypeId(issueType.id) === configuredId
+    );
+    if (byConfiguredId) {
+      return byConfiguredId;
+    }
+  }
+
+  const expectedName = String(options.issueTypeName || config.jiraIssueTypeName || "")
+    .trim()
+    .toLowerCase();
+  if (expectedName) {
+    const byName = issueTypes.find((issueType) => {
+      const name = String(issueType.name || "").trim().toLowerCase();
+      const untranslatedName = String(issueType.untranslatedName || "").trim().toLowerCase();
+      return name === expectedName || untranslatedName === expectedName;
+    });
+    if (byName) {
+      return byName;
+    }
+  }
+
+  return issueTypes[0] || null;
+}
+
+async function buildJiraModalOptions(bug, runtimeConfig, overrides = {}) {
+  const projectKey = normalizeJiraProjectKey(
+    overrides.projectKey || getJiraProjectKeyForBug(bug, runtimeConfig)
+  );
+  let jiraIssueTypes = [];
+  let issueTypesError = "";
+
+  if (projectKey && jiraClient.isConfigured()) {
+    try {
+      jiraIssueTypes = await jiraClient.listIssueTypesForProject(projectKey);
+    } catch (error) {
+      console.error(`Failed to load Jira issue types for ${projectKey}`, error);
+      issueTypesError = error.message || "неизвестная ошибка";
+    }
+  }
+
+  const preferredIssueType = findPreferredJiraIssueType(jiraIssueTypes, overrides);
+
   return {
-    projectKey: getJiraProjectKeyForBug(bug, runtimeConfig),
+    projectKey,
     mappedProjectKey: getMappedJiraProjectKeyForBug(bug, runtimeConfig),
     jiraProjects: buildJiraProjectChoices(runtimeConfig),
+    jiraIssueTypes,
+    issueTypeId: preferredIssueType?.id || normalizeJiraIssueTypeId(overrides.issueTypeId),
+    issueTypeName:
+      preferredIssueType?.name || overrides.issueTypeName || config.jiraIssueTypeName,
+    issueTypesError,
   };
 }
 
@@ -656,6 +720,24 @@ export const slackService = {
         "jira_summary_block",
         "jira_summary_input"
       );
+      const jiraIssueTypeId = extractStaticValue(
+        payload.view.state,
+        "jira_issue_type_block",
+        "jira_issue_type_select"
+      );
+      const jiraIssueTypeName = extractPlainTextValue(
+        payload.view.state,
+        "jira_issue_type_block",
+        "jira_issue_type_input"
+      );
+      if (!jiraIssueTypeId && !jiraIssueTypeName) {
+        return {
+          response_action: "errors",
+          errors: {
+            jira_issue_type_block: "Выберите или укажите тип задачи Jira.",
+          },
+        };
+      }
       const note = extractPlainTextValue(payload.view.state, "jira_note_block", "jira_note_input");
       runInBackground(async () => {
         try {
@@ -666,6 +748,8 @@ export const slackService = {
 
           const issue = await jiraClient.createIssueFromBug(bug, {
             projectKey: normalizedJiraProjectKey,
+            issueTypeId: jiraIssueTypeId,
+            issueTypeName: jiraIssueTypeName,
             summary,
             extraContext: note,
             moderatorName: payload.user.username || payload.user.name || payload.user.id,
@@ -707,6 +791,44 @@ export const slackService = {
     if (action.action_id === ACTIONS.OPEN_BUG_MODAL) {
       await openBugReportModal(payload.trigger_id, this.runtimeConfig.products);
       runInBackground(() => this.refreshRuntimeConfig());
+      return {};
+    }
+
+    if (payload.view?.callback_id === CALLBACKS.LINK_JIRA_MODAL) {
+      if (action.action_id === "jira_project_key_select") {
+        const metadata = parseMetadata(payload.view.private_metadata);
+        const bug = bugStore.get(metadata.bugId);
+        if (!bug) {
+          return {};
+        }
+
+        await this.refreshRuntimeConfig();
+        ensureModerator(payload.user.id, this.runtimeConfig.moderatorIds);
+
+        const selectedProjectKey = normalizeJiraProjectKey(extractSelectedOptionValue(action));
+        const selectedIssueTypeId = extractStaticValue(
+          payload.view.state,
+          "jira_issue_type_block",
+          "jira_issue_type_select"
+        );
+        const selectedIssueTypeName = extractPlainTextValue(
+          payload.view.state,
+          "jira_issue_type_block",
+          "jira_issue_type_input"
+        );
+        const modalOptions = await buildJiraModalOptions(bug, this.runtimeConfig, {
+          projectKey: selectedProjectKey,
+          issueTypeId: selectedIssueTypeId,
+          issueTypeName: selectedIssueTypeName,
+        });
+
+        await slackClient.views.update({
+          view_id: payload.view.id,
+          hash: payload.view.hash,
+          view: buildLinkJiraModal(bug.bugId, modalOptions),
+        });
+      }
+
       return {};
     }
 
@@ -788,9 +910,10 @@ export const slackService = {
       }
 
       if (selectedAction === ACTIONS.OPEN_LINK_JIRA_MODAL) {
+        const modalOptions = await buildJiraModalOptions(bug, this.runtimeConfig);
         await openModal(
           payload.trigger_id,
-          buildLinkJiraModal(bug.bugId, buildJiraModalOptions(bug, this.runtimeConfig))
+          buildLinkJiraModal(bug.bugId, modalOptions)
         );
         return {};
       }
@@ -807,9 +930,10 @@ export const slackService = {
     }
 
     if (action.action_id === ACTIONS.OPEN_LINK_JIRA_MODAL) {
+      const modalOptions = await buildJiraModalOptions(bug, this.runtimeConfig);
       await openModal(
         payload.trigger_id,
-        buildLinkJiraModal(bug.bugId, buildJiraModalOptions(bug, this.runtimeConfig))
+        buildLinkJiraModal(bug.bugId, modalOptions)
       );
       return {};
     }
