@@ -212,8 +212,38 @@ function getSheetColumnCount(title) {
   return BUG_HEADERS.length;
 }
 
+const SHEET_FORMULA_PREFIX_PATTERN = /^[=+\-@\t\r\n]/;
+
+function escapeSheetCell(value) {
+  if (typeof value !== "string" || !SHEET_FORMULA_PREFIX_PATTERN.test(value)) {
+    return value;
+  }
+
+  return `'${value}`;
+}
+
+function unescapeSheetCell(value) {
+  if (
+    typeof value === "string" &&
+    value.startsWith("'") &&
+    SHEET_FORMULA_PREFIX_PATTERN.test(value.slice(1))
+  ) {
+    return value.slice(1);
+  }
+
+  return value;
+}
+
+function escapeSheetRow(row) {
+  return row.map(escapeSheetCell);
+}
+
+function escapeSheetValues(values) {
+  return values.map(escapeSheetRow);
+}
+
 function asSheetRow(bug) {
-  return [
+  return escapeSheetRow([
     bug.bugId,
     formatDisplayDate(bug.createdAt),
     formatDisplayDate(bug.updatedAt),
@@ -235,7 +265,7 @@ function asSheetRow(bug) {
     bug.jiraUrl || "",
     bug.duplicateOf || "",
     bug.rejectionReason || "",
-  ];
+  ]);
 }
 
 function normalizeBoolean(value) {
@@ -247,35 +277,35 @@ function rowsToBugEntries(rows) {
   return rows
     .filter((row) => row[0])
     .map((sourceRow) => {
-      const row = normalizeLegacyBugRow(sourceRow);
+      const row = normalizeLegacyBugRow(sourceRow).map(unescapeSheetCell);
       return {
-      bugId: row[0] || "",
-      createdAt: row[1] || "",
-      updatedAt: row[2] || "",
-      status: normalizeLegacyStatus(row[3] || ""),
-      moderator: row[4] || "",
-      product: normalizeLegacyProduct(row[5] || ""),
-      clinicId: row[6] || "",
-      userRole: row[7] || "",
-      priority: normalizeLegacyPriority(row[8] || ""),
-      section: row[9] || "",
-      reproductionSteps: row[10] || "",
-      expectedResult: row[11] || "",
-      actualResult: row[12] || "",
-      description: row[13] || "",
-      attachmentNote: row[14] || "",
-      reporter: row[15] || "",
-      fixedAt: row[16] || "",
-      jiraKey: row[17] || "",
-      jiraUrl: row[18] || "",
-      duplicateOf: row[19] || "",
-      rejectionReason: row[20] || "",
+        bugId: row[0] || "",
+        createdAt: row[1] || "",
+        updatedAt: row[2] || "",
+        status: normalizeLegacyStatus(row[3] || ""),
+        moderator: row[4] || "",
+        product: normalizeLegacyProduct(row[5] || ""),
+        clinicId: row[6] || "",
+        userRole: row[7] || "",
+        priority: normalizeLegacyPriority(row[8] || ""),
+        section: row[9] || "",
+        reproductionSteps: row[10] || "",
+        expectedResult: row[11] || "",
+        actualResult: row[12] || "",
+        description: row[13] || "",
+        attachmentNote: row[14] || "",
+        reporter: row[15] || "",
+        fixedAt: row[16] || "",
+        jiraKey: row[17] || "",
+        jiraUrl: row[18] || "",
+        duplicateOf: row[19] || "",
+        rejectionReason: row[20] || "",
       };
     });
 }
 
 function asSystemRow(bug) {
-  return [
+  return escapeSheetRow([
     bug.bugId,
     bug.reporterId || "",
     bug.reporterName || "",
@@ -290,28 +320,31 @@ function asSystemRow(bug) {
     bug.fixedAt || "",
     bug.createdAt || "",
     bug.updatedAt || "",
-  ];
+  ]);
 }
 
 function rowsToSystemBugs(rows) {
   return rows
     .filter((row) => row[0])
-    .map((row) => ({
-      bugId: row[0] || "",
-      reporterId: row[1] || "",
-      reporterName: row[2] || "",
-      channelId: row[3] || "",
-      messageTs: row[4] || "",
-      threadTs: row[5] || "",
-      assignedModeratorId: row[6] || null,
-      assignedModeratorName: row[7] || null,
-      status: row[8] || "new",
-      priority: row[9] || "",
-      product: row[10] || "",
-      fixedAt: row[11] || null,
-      createdAt: row[12] || "",
-      updatedAt: row[13] || "",
-    }));
+    .map((sourceRow) => {
+      const row = sourceRow.map(unescapeSheetCell);
+      return {
+        bugId: row[0] || "",
+        reporterId: row[1] || "",
+        reporterName: row[2] || "",
+        channelId: row[3] || "",
+        messageTs: row[4] || "",
+        threadTs: row[5] || "",
+        assignedModeratorId: row[6] || null,
+        assignedModeratorName: row[7] || null,
+        status: row[8] || "new",
+        priority: row[9] || "",
+        product: row[10] || "",
+        fixedAt: row[11] || null,
+        createdAt: row[12] || "",
+        updatedAt: row[13] || "",
+      };
+    });
 }
 
 function buildDashboardValues(entries) {
@@ -726,8 +759,12 @@ class GoogleSheetsService {
     for (let index = 0; index < rows.length; index += 1) {
       const row = rows[index];
       const updatedRow = normalizeLegacyBugRow(row);
+      const safeUpdatedRow = escapeSheetRow(updatedRow);
 
-      if (!isLegacyBugRow(row) && updatedRow.every((value, columnIndex) => value === (row[columnIndex] || ""))) {
+      if (
+        !isLegacyBugRow(row) &&
+        safeUpdatedRow.every((value, columnIndex) => value === (row[columnIndex] || ""))
+      ) {
         continue;
       }
 
@@ -736,13 +773,13 @@ class GoogleSheetsService {
           spreadsheetId: this.spreadsheetId,
           range: `${SHEETS.bugs}!A${index + 2}:U${index + 2}`,
           valueInputOption: "RAW",
-          requestBody: { values: [updatedRow] },
+          requestBody: { values: [safeUpdatedRow] },
         });
-        } catch (error) {
-          console.error(`Failed to migrate row ${index + 2}`, error);
-        }
+      } catch (error) {
+        console.error(`Failed to migrate row ${index + 2}`, error);
       }
     }
+  }
 
   async applyFormatting() {
     try {
@@ -1028,7 +1065,7 @@ class GoogleSheetsService {
       spreadsheetId: this.spreadsheetId,
       range: `${SHEETS.dashboard}!A1:H40`,
       valueInputOption: "RAW",
-      requestBody: { values: buildDashboardValues(entries) },
+      requestBody: { values: escapeSheetValues(buildDashboardValues(entries)) },
     });
   }
 

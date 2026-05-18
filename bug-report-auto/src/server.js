@@ -1,4 +1,5 @@
 ﻿import Fastify from "fastify";
+import crypto from "node:crypto";
 import { config } from "./config.js";
 import { googleSheetsService } from "./google/sheets.js";
 import { startJiraStatusSyncScheduler, startWeeklyReportScheduler } from "./reports/scheduler.js";
@@ -8,13 +9,37 @@ const app = Fastify({
   logger: true,
 });
 
+const INTERNAL_API_TOKEN_PLACEHOLDER = "replace-with-a-long-random-token";
+
+function getHeaderValue(value) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function tokenEquals(provided, expected) {
+  const providedBuffer = Buffer.from(String(provided || ""));
+  const expectedBuffer = Buffer.from(String(expected || ""));
+
+  return (
+    providedBuffer.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(providedBuffer, expectedBuffer)
+  );
+}
+
+function hasConfiguredInternalToken() {
+  return Boolean(
+    config.internalApiToken && config.internalApiToken !== INTERNAL_API_TOKEN_PLACEHOLDER
+  );
+}
+
 function authorizeInternal(request, reply) {
-  if (!config.internalApiToken) {
-    return true;
+  if (!hasConfiguredInternalToken()) {
+    request.log.error("INTERNAL_API_TOKEN is not configured; rejecting internal API request");
+    reply.code(503).send({ ok: false, error: "Internal API token is not configured" });
+    return false;
   }
 
-  const provided = request.headers["x-internal-token"];
-  if (provided !== config.internalApiToken) {
+  const provided = getHeaderValue(request.headers["x-internal-token"]);
+  if (!provided || !tokenEquals(provided, config.internalApiToken)) {
     reply.code(401).send({ ok: false, error: "Unauthorized" });
     return false;
   }
